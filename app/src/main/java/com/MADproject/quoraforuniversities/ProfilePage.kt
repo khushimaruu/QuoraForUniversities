@@ -39,10 +39,13 @@ data class UserPost(
     val likes: Int
 )
 
+
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
-    onBackClick: () -> Unit = {}
+    onBackClick: () -> Unit = {},
+    onNavDestinationSelected: Function<Unit>
 ) {
 
     val context = LocalContext.current

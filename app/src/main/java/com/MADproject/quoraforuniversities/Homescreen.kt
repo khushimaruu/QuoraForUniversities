@@ -89,7 +89,7 @@ fun HomeScreen(
 // ---------------------------------------------------------------------------
 // PREVIEW — sample data only.
 // ---------------------------------------------------------------------------
-private val sampleQuestions = listOf(
+val sampleQuestions = listOf(
     QuestionUiModel(
         id = "1",
         title = "How do I add a backlog course to my timetable?",
