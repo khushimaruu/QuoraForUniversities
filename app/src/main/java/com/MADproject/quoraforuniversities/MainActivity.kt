@@ -33,7 +33,7 @@ class MainActivity : ComponentActivity() {
 fun CampusQnAApp() {
 
     var currentScreen by remember {
-        mutableStateOf("home")
+        mutableStateOf("landing")
     }
 
     var selectedQuestion by remember {
@@ -102,6 +102,19 @@ fun CampusQnAApp() {
 
     when (currentScreen) {
 
+        "landing" -> {
+
+            LandingPage(
+                onLoginClick = {
+                    currentScreen = "home"
+                },
+
+                onSignUpClick = {
+                    currentScreen = "home"
+                }
+            )
+        }
+
         // =====================================================
         // HOME
         // =====================================================
@@ -133,12 +146,15 @@ fun CampusQnAApp() {
                             currentScreen = "home"
                         }
 
+                        BottomNavDestination.SEARCH -> {
+                            currentScreen = "search"
+                        }
+
                         BottomNavDestination.PROFILE -> {
                             currentScreen = "profile"
                         }
 
                         else -> {
-                            // Other destinations can be added later
                         }
                     }
                 }
@@ -148,6 +164,50 @@ fun CampusQnAApp() {
         // =====================================================
         // POST DETAIL
         // =====================================================
+// =====================================================
+// SEARCH
+// =====================================================
+
+        "search" -> {
+
+            SearchPage(
+                questions = questions,
+
+                onQuestionClick = { questionId ->
+
+                    selectedQuestion = questions.find { question ->
+                        question.id == questionId
+                    }
+
+                    currentScreen = "post"
+                },
+
+                onUpvoteClick = {
+                    // Add logic later
+                },
+
+                onNavDestinationSelected = { destination ->
+
+                    when (destination) {
+
+                        BottomNavDestination.HOME -> {
+                            currentScreen = "home"
+                        }
+
+                        BottomNavDestination.SEARCH -> {
+                            currentScreen = "search"
+                        }
+
+                        BottomNavDestination.PROFILE -> {
+                            currentScreen = "profile"
+                        }
+
+                        else -> {
+                        }
+                    }
+                }
+            )
+        }
 
         "post" -> {
 
