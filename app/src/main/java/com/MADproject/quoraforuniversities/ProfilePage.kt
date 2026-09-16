@@ -30,6 +30,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.MADproject.quoraforuniversities.components.AppHeader
+import com.MADproject.quoraforuniversities.components.BottomNavBar
+import com.MADproject.quoraforuniversities.components.BottomNavDestination
 
 data class UserPost(
     val title: String,
@@ -45,7 +48,7 @@ data class UserPost(
 @Composable
 fun ProfileScreen(
     onBackClick: () -> Unit = {},
-    onNavDestinationSelected: Function<Unit>
+    onNavDestinationSelected: (BottomNavDestination) -> Unit
 ) {
 
     val context = LocalContext.current
@@ -98,29 +101,12 @@ fun ProfileScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Profile",
-                        fontWeight = FontWeight.SemiBold
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {}) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search"
-                        )
-                    }
-                }
+            AppHeader(subtitle = "My Profile")
+        },
+        bottomBar = {
+            BottomNavBar(
+                currentRoute = BottomNavDestination.PROFILE.route,
+                onDestinationSelected = onNavDestinationSelected
             )
         }
     ) { paddingValues ->

@@ -17,6 +17,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.MADproject.quoraforuniversities.components.AppHeader
+import com.MADproject.quoraforuniversities.components.BottomNavBar
+import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 
@@ -33,7 +36,8 @@ fun PostDetailPage(
     replies: List<ReplyUiModel>,
     onBackClick: () -> Unit = {},
     onUpvoteClick: () -> Unit = {},
-    onSubmitReply: (String) -> Unit = {}
+    onSubmitReply: (String) -> Unit = {},
+    onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
 ) {
 
     var replyText by remember {
@@ -41,7 +45,16 @@ fun PostDetailPage(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            AppHeader(subtitle = "Question Details")
+        },
+        bottomBar = {
+            BottomNavBar(
+                currentRoute = null,
+                onDestinationSelected = onNavDestinationSelected
+            )
+        }
     ) { innerPadding ->
 
         Column(
@@ -49,33 +62,6 @@ fun PostDetailPage(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-
-            // TOP BAR
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-
-                IconButton(
-                    onClick = onBackClick
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Back"
-                    )
-                }
-
-                Text(
-                    text = "Question",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-
-            HorizontalDivider()
 
             // CONTENT
 
@@ -408,7 +394,7 @@ private fun PostDetailPagePreview() {
     CampusQnATheme {
 
         PostDetailPage(
-            question = sampleQuestions[0],
+            question = question,
             replies = sampleReplies
         )
     }
