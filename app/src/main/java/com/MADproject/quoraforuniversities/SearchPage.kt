@@ -17,6 +17,7 @@ import com.MADproject.quoraforuniversities.components.BottomNavBar
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import com.MADproject.quoraforuniversities.components.QuestionCard
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
+import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 
 @Composable
 fun SearchPage(
@@ -100,7 +101,10 @@ fun SearchPage(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("No matching questions found.")
+                    Text(
+                        text = "No matching questions found.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
 
             } else {
@@ -154,7 +158,9 @@ fun SearchPagePreview() {
         )
     )
 
-    SearchPage(
-        questions = previewQuestions
-    )
+    CampusQnATheme {
+        SearchPage(
+            questions = previewQuestions
+        )
+    }
 }

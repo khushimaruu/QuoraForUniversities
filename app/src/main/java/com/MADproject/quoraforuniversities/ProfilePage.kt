@@ -16,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,6 +29,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.tooling.preview.Preview
+import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 import com.MADproject.quoraforuniversities.components.AppHeader
 import com.MADproject.quoraforuniversities.components.BottomNavBar
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
@@ -47,7 +48,6 @@ data class UserPost(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
-    onBackClick: () -> Unit = {},
     onNavDestinationSelected: (BottomNavDestination) -> Unit
 ) {
 
@@ -101,21 +101,7 @@ fun ProfileScreen(
 
     Scaffold(
         topBar = {
-            Box {
-                AppHeader(subtitle = "My Profile")
-                IconButton(
-                    onClick = onBackClick,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(top = 44.dp, start = 8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White
-                    )
-                }
-            }
+            AppHeader(subtitle = "My Profile")
         },
         bottomBar = {
             BottomNavBar(
@@ -128,9 +114,9 @@ fun ProfileScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFFF8F8F8))
-                .padding(paddingValues)
-                .padding(horizontal = 20.dp),
+                .background(MaterialTheme.colorScheme.background)
+                .padding(paddingValues),
+            contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
@@ -162,7 +148,7 @@ fun ProfileScreen(
                             modifier = Modifier
                                 .size(120.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFFE8E8E8)),
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
                             contentAlignment = Alignment.Center
                         ) {
 
@@ -170,7 +156,7 @@ fun ProfileScreen(
                                 imageVector = Icons.Default.Person,
                                 contentDescription = "Profile",
                                 modifier = Modifier.size(65.dp),
-                                tint = Color.Gray
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -200,7 +186,7 @@ fun ProfileScreen(
                 Text(
                     text = "Change profile photo",
                     fontSize = 14.sp,
-                    color = Color(0xFF555555),
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.clickable {
                         imagePicker.launch("image/*")
                     }
@@ -222,7 +208,7 @@ fun ProfileScreen(
                         Text(
                             text = "Username",
                             fontSize = 12.sp,
-                            color = Color.Gray
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
                         Text(
@@ -288,7 +274,7 @@ fun ProfileScreen(
                     Text(
                         text = bio,
                         fontSize = 14.sp,
-                        color = Color(0xFF444444),
+                        color = MaterialTheme.colorScheme.onSurface,
                         lineHeight = 21.sp
                     )
 
@@ -298,7 +284,7 @@ fun ProfileScreen(
                         text = "Edit Bio",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
-                        color = Color(0xFF555555),
+                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable {
                             bio = if (
                                 bio == "Computer Science student • Tech enthusiast"
@@ -331,7 +317,7 @@ fun ProfileScreen(
                     Text(
                         text = "(${posts.size})",
                         fontSize = 15.sp,
-                        color = Color.Gray
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
@@ -344,13 +330,23 @@ fun ProfileScreen(
 
                 PostCard(post)
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
             }
 
             item {
                 Spacer(modifier = Modifier.height(25.dp))
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun ProfileScreenPreview() {
+    CampusQnATheme {
+        ProfileScreen(
+            onNavDestinationSelected = {}
+        )
     }
 }
 
@@ -369,10 +365,10 @@ fun ProfileInfoCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color.White
+            containerColor = MaterialTheme.colorScheme.surface
         ),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = 1.dp
+            defaultElevation = 2.dp
         )
     ) {
 
@@ -415,13 +411,13 @@ fun ProfileField(
         Text(
             text = label,
             fontSize = 12.sp,
-            color = Color.Gray
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Text(
             text = value,
             fontSize = 15.sp,
-            color = Color(0xFF222222)
+            color = MaterialTheme.colorScheme.onSurface
         )
     }
 }
@@ -436,12 +432,12 @@ fun PostCard(post: UserPost) {
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color.White
+            containerColor = MaterialTheme.colorScheme.surface
         ),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = 1.dp
+            defaultElevation = 6.dp
         )
     ) {
 
@@ -462,7 +458,7 @@ fun PostCard(post: UserPost) {
             Text(
                 text = post.description,
                 fontSize = 13.sp,
-                color = Color.Gray,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 18.sp
             )
 
@@ -471,7 +467,7 @@ fun PostCard(post: UserPost) {
             // Category
             Surface(
                 shape = RoundedCornerShape(5.dp),
-                color = Color(0xFFF0F0F0)
+                color = MaterialTheme.colorScheme.surfaceVariant
             ) {
 
                 Text(
@@ -493,7 +489,7 @@ fun PostCard(post: UserPost) {
                 Text(
                     text = "♥ ${post.likes}",
                     fontSize = 12.sp,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Spacer(modifier = Modifier.width(15.dp))
@@ -501,7 +497,7 @@ fun PostCard(post: UserPost) {
                 Text(
                     text = "${post.answers} answers",
                     fontSize = 12.sp,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
