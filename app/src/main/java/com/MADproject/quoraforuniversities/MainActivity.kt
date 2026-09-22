@@ -5,22 +5,22 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
+import androidx.compose.runtime.setValue
 
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
-import com.MADproject.quoraforuniversities.ui.addpost.AddPostScreen
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         enableEdgeToEdge()
+
         setContent {
             CampusQnATheme {
                 CampusQnAApp()
@@ -31,125 +31,279 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun CampusQnAApp() {
-    val navController = rememberNavController()
 
-    // ---------------------------------------------------------
-    // SAMPLE DATA
-    // ---------------------------------------------------------
-    val questions = remember {
-        listOf(
-            QuestionUiModel(
-                id = "1",
-                title = "How do I add a backlog course to my timetable?",
-                body = "I failed one course last semester and need to retake it alongside my current courses. Not sure how registration handles this.",
-                authorName = "Anonymous",
-                isAnonymous = true,
-                tags = listOf("CSE", "Year2", "Registration"),
-                voteCount = 12,
-                answerCount = 4
-            ),
-            QuestionUiModel(
-                id = "2",
-                title = "Best cafes near the north campus for group study?",
-                body = "Looking for a place with decent wifi and enough seating for 4-5 people, preferably open till late.",
-                authorName = "Riya Sharma",
-                isAnonymous = false,
-                tags = listOf("CampusLife"),
-                voteCount = 27,
-                answerCount = 9
-            )
-        )
+    var currentScreen by remember {
+        mutableStateOf("landing")
     }
 
-    val replies = remember {
-        listOf(
-            ReplyUiModel(
-                id = "1",
-                authorName = "Aarav",
-                body = "You can usually add the backlog course during the registration period.",
-                voteCount = 0
-            ),
-            ReplyUiModel(
-                id = "2",
-                authorName = "Anonymous",
-                body = "I had the same issue last semester. Check with your department office.",
-                voteCount = 0
-            )
-        )
+    var selectedQuestion by remember {
+        mutableStateOf<QuestionUiModel?>(null)
     }
 
     // ---------------------------------------------------------
-    // NAVIGATION HOST
+    // SAMPLE QUESTIONS
     // ---------------------------------------------------------
-    NavHost(
-        navController = navController,
-        startDestination = "landing"
-    ) {
-        composable("landing") {
+
+    val questions = listOf(
+
+        QuestionUiModel(
+            id = "1",
+            title = "How do I add a backlog course to my timetable?",
+            body = "I failed one course last semester and need to retake it alongside my current courses. Not sure how registration handles this.",
+            authorName = "Anonymous",
+            isAnonymous = true,
+            tags = listOf(
+                "CSE",
+                "Year2",
+                "Registration"
+            ),
+            voteCount = 12,
+            answerCount = 4
+        ),
+
+        QuestionUiModel(
+            id = "2",
+            title = "Best cafes near the north campus for group study?",
+            body = "Looking for a place with decent wifi and enough seating for 4-5 people, preferably open till late.",
+            authorName = "Riya Sharma",
+            isAnonymous = false,
+            tags = listOf(
+                "CampusLife"
+            ),
+            voteCount = 27,
+            answerCount = 9
+        )
+    )
+
+    // ---------------------------------------------------------
+    // SAMPLE REPLIES
+    // ---------------------------------------------------------
+
+    val replies = listOf(
+
+        ReplyUiModel(
+            id = "1",
+            authorName = "Aarav",
+            body = "You can usually add the backlog course during the registration period.",
+            voteCount = 0
+        ),
+
+        ReplyUiModel(
+            id = "2",
+            authorName = "Anonymous",
+            body = "I had the same issue last semester. Check with your department office.",
+            voteCount = 0
+        )
+    )
+
+    // ---------------------------------------------------------
+    // SCREEN NAVIGATION
+    // ---------------------------------------------------------
+
+    when (currentScreen) {
+
+        "landing" -> {
+
             LandingPage(
-                onLoginClick = { navController.navigate(BottomNavDestination.HOME.route) },
-                onSignUpClick = { navController.navigate(BottomNavDestination.HOME.route) }
+                onLoginClick = {
+                    currentScreen = "home"
+                },
+
+                onSignUpClick = {
+                    currentScreen = "home"
+                }
             )
         }
 
-        composable(BottomNavDestination.HOME.route) {
+        // =====================================================
+        // HOME
+        // =====================================================
+
+        "home" -> {
+
             HomeScreen(
+
                 questions = questions,
-                onQuestionClick = { id -> navController.navigate("post_detail/$id") },
-                onNavDestinationSelected = { dest ->
-                    if (dest.route != BottomNavDestination.HOME.route) {
-                        navController.navigate(dest.route)
+
+                onQuestionClick = { questionId ->
+
+                    selectedQuestion = questions.find { question ->
+                        question.id == questionId
+                    }
+
+                    currentScreen = "post"
+                },
+
+                onUpvoteClick = {
+                    // Add upvote logic later
+                },
+
+                onNavDestinationSelected = { destination ->
+
+                    when (destination) {
+
+                        BottomNavDestination.HOME -> {
+                            currentScreen = "home"
+                        }
+
+                        BottomNavDestination.SEARCH -> {
+                            currentScreen = "search"
+                        }
+
+                        BottomNavDestination.PROFILE -> {
+                            currentScreen = "profile"
+                        }
+
+                        BottomNavDestination.ADD_POST -> {
+                            currentScreen = "add_post"
+                        }
                     }
                 }
             )
         }
 
-        composable(BottomNavDestination.SEARCH.route) {
+        // =====================================================
+        // POST DETAIL
+        // =====================================================
+// =====================================================
+// SEARCH
+// =====================================================
+
+        "search" -> {
+
             SearchPage(
                 questions = questions,
-                onQuestionClick = { id -> navController.navigate("post_detail/$id") },
-                onNavDestinationSelected = { dest ->
-                    if (dest.route != BottomNavDestination.SEARCH.route) {
-                        navController.navigate(dest.route)
+
+                onQuestionClick = { questionId ->
+
+                    selectedQuestion = questions.find { question ->
+                        question.id == questionId
+                    }
+
+                    currentScreen = "post"
+                },
+
+                onUpvoteClick = {
+                    // Add logic later
+                },
+
+                onNavDestinationSelected = { destination ->
+
+                    when (destination) {
+
+                        BottomNavDestination.HOME -> {
+                            currentScreen = "home"
+                        }
+
+                        BottomNavDestination.SEARCH -> {
+                            currentScreen = "search"
+                        }
+
+                        BottomNavDestination.PROFILE -> {
+                            currentScreen = "profile"
+                        }
+
+                        BottomNavDestination.ADD_POST -> {
+                            currentScreen = "add_post"
+                        }
                     }
                 }
             )
         }
 
-        composable(BottomNavDestination.PROFILE.route) {
-            ProfileScreen(
-                onNavDestinationSelected = { dest ->
-                    if (dest.route != BottomNavDestination.PROFILE.route) {
-                        navController.navigate(dest.route)
-                    }
-                }
-            )
-        }
+        "post" -> {
 
-        composable(BottomNavDestination.ADD_POST.route) {
-            AddPostScreen(
-                onBack = { navController.popBackStack() },
-                onPosted = { navController.popBackStack() }
-            )
-        }
+            selectedQuestion?.let { question ->
 
-        composable(
-            route = "post_detail/{questionId}",
-            arguments = listOf(navArgument("questionId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val questionId = backStackEntry.arguments?.getString("questionId")
-            val question = questions.find { it.id == questionId }
-
-            if (question != null) {
                 PostDetailPage(
+
                     question = question,
+
                     replies = replies,
-                    onBackClick = { navController.popBackStack() },
-                    onNavDestinationSelected = { dest ->
-                        navController.navigate(dest.route)
+
+                    onBackClick = {
+                        currentScreen = "home"
+                    },
+
+                    onUpvoteClick = {
+                        // Add upvote logic later
+                    },
+
+                    onSubmitReply = {
+                        // Add reply logic later
+                    },
+
+                    onNavDestinationSelected = { destination ->
+
+                        when (destination) {
+
+                            BottomNavDestination.HOME -> {
+                                currentScreen = "home"
+                            }
+
+                            BottomNavDestination.SEARCH -> {
+                                currentScreen = "search"
+                            }
+
+                            BottomNavDestination.PROFILE -> {
+                                currentScreen = "profile"
+                            }
+
+                            BottomNavDestination.ADD_POST -> {
+                                currentScreen = "add_post"
+                            }
+                        }
                     }
                 )
             }
+        }
+
+        // =====================================================
+        // PROFILE
+        // =====================================================
+
+        "profile" -> {
+
+            ProfileScreen(
+
+                onNavDestinationSelected = { destination ->
+
+                    when (destination) {
+
+                        BottomNavDestination.HOME -> {
+                            currentScreen = "home"
+                        }
+
+                        BottomNavDestination.SEARCH -> {
+                            currentScreen = "search"
+                        }
+
+                        BottomNavDestination.PROFILE -> {
+                            currentScreen = "profile"
+                        }
+
+                        BottomNavDestination.ADD_POST -> {
+                            currentScreen = "add_post"
+                        }
+                    }
+                }
+            )
+        }
+
+        // =====================================================
+        // ADD POST
+        // =====================================================
+
+        "add_post" -> {
+
+            com.MADproject.quoraforuniversities.ui.addpost.AddPostScreen(
+                onBack = {
+                    currentScreen = "home"
+                },
+                onPosted = {
+                    currentScreen = "home"
+                }
+            )
         }
     }
 }

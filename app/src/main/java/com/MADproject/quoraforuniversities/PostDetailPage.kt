@@ -48,21 +48,7 @@ fun PostDetailPage(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Box {
-                AppHeader(subtitle = "Question Details")
-                IconButton(
-                    onClick = onBackClick,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(top = 44.dp, start = 8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White
-                    )
-                }
-            }
+            AppHeader(subtitle = "Question Details")
         },
         bottomBar = {
             BottomNavBar(
