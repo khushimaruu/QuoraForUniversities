@@ -103,14 +103,40 @@ fun CampusQnAApp() {
     when (currentScreen) {
 
         "landing" -> {
-
             LandingPage(
                 onLoginClick = {
+                    currentScreen = "login"
+                },
+                onSignUpClick = {
+                    currentScreen = "signup"
+                }
+            )
+        }
+
+        "login" -> {
+            LoginPage(
+                onBackClick = {
+                    currentScreen = "landing"
+                },
+                onLoginSuccess = {
                     currentScreen = "home"
                 },
+                onNavigateToSignUp = {
+                    currentScreen = "signup"
+                }
+            )
+        }
 
-                onSignUpClick = {
+        "signup" -> {
+            SignUpPage(
+                onBackClick = {
+                    currentScreen = "landing"
+                },
+                onSignUpSuccess = {
                     currentScreen = "home"
+                },
+                onNavigateToLogin = {
+                    currentScreen = "login"
                 }
             )
         }
