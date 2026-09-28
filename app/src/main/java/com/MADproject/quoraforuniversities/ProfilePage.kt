@@ -16,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,10 +29,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.tooling.preview.Preview
+import com.MADproject.quoraforuniversities.data.AuthRepository
+import com.MADproject.quoraforuniversities.data.ProfileDto
+import com.MADproject.quoraforuniversities.data.ProfileRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 import com.MADproject.quoraforuniversities.components.AppHeader
 import com.MADproject.quoraforuniversities.components.BottomNavBar
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
+import kotlinx.coroutines.launch
 
 data class UserPost(
     val title: String,
@@ -43,27 +46,35 @@ data class UserPost(
     val likes: Int
 )
 
-
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
-    onNavDestinationSelected: (BottomNavDestination) -> Unit
+    authRepository: AuthRepository = remember { AuthRepository() },
+    profileRepository: ProfileRepository = remember { ProfileRepository() },
+    onLogOutClick: () -> Unit = {},
+    onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
 ) {
-
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
-    // User information
-    var username by remember { mutableStateOf("khushi_maru") }
-    var firstName by remember { mutableStateOf("Khushi") }
-    var lastName by remember { mutableStateOf("Maru") }
-    var university by remember {
-        mutableStateOf("Mukesh Patel School of Technology")
+    var profile by remember { mutableStateOf<ProfileDto?>(null) }
+    var emailText by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        val uid = authRepository.getCurrentUserId()
+        val email = authRepository.getCurrentUserEmail() ?: ""
+        emailText = email
+        val fetched = profileRepository.getProfile(uid).getOrNull()
+        profile = fetched ?: ProfileDto(
+            id = uid ?: "",
+            username = email.substringBefore("@").ifBlank { "student" },
+            name = "Student"
+        )
     }
-    var gender by remember { mutableStateOf("Female") }
-    var bio by remember {
-        mutableStateOf("Computer Science student • Tech enthusiast")
-    }
+
+    val username = profile?.username ?: emailText.substringBefore("@").ifBlank { "student" }
+    val name = profile?.name ?: "Student"
+    val bio = profile?.bio ?: "University Student • CampusCircle Member"
 
     // Profile photo
     var profileBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
@@ -71,7 +82,6 @@ fun ProfileScreen(
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-
         uri?.let {
             val inputStream = context.contentResolver.openInputStream(it)
             profileBitmap = BitmapFactory.decodeStream(inputStream)
@@ -121,18 +131,14 @@ fun ProfileScreen(
         ) {
 
             item {
-
                 Spacer(modifier = Modifier.height(20.dp))
 
                 // ---------------- PROFILE PHOTO ----------------
-
                 Box(
                     modifier = Modifier.size(120.dp),
                     contentAlignment = Alignment.BottomEnd
                 ) {
-
                     if (profileBitmap != null) {
-
                         Image(
                             bitmap = profileBitmap!!.asImageBitmap(),
                             contentDescription = "Profile Photo",
@@ -141,9 +147,7 @@ fun ProfileScreen(
                                 .clip(CircleShape),
                             contentScale = ContentScale.Crop
                         )
-
                     } else {
-
                         Box(
                             modifier = Modifier
                                 .size(120.dp)
@@ -151,7 +155,6 @@ fun ProfileScreen(
                                 .background(MaterialTheme.colorScheme.surfaceVariant),
                             contentAlignment = Alignment.Center
                         ) {
-
                             Icon(
                                 imageVector = Icons.Default.Person,
                                 contentDescription = "Profile",
@@ -195,41 +198,22 @@ fun ProfileScreen(
                 Spacer(modifier = Modifier.height(18.dp))
 
                 // ---------------- USERNAME ----------------
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-
                     Column(
                         modifier = Modifier.weight(1f)
                     ) {
-
                         Text(
                             text = "Username",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-
                         Text(
                             text = "@$username",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            username = if (username == "khushi_maru") {
-                                "student_user"
-                            } else {
-                                "khushi_maru"
-                            }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Edit Username"
                         )
                     }
                 }
@@ -237,83 +221,67 @@ fun ProfileScreen(
                 Spacer(modifier = Modifier.height(15.dp))
 
                 // ---------------- PERSONAL INFORMATION ----------------
-
                 ProfileInfoCard(
                     title = "Personal Information"
                 ) {
-
                     ProfileField(
-                        label = "First Name",
-                        value = firstName
+                        label = "Name",
+                        value = name
                     )
-
-                    ProfileField(
-                        label = "Last Name",
-                        value = lastName
-                    )
-
-                    ProfileField(
-                        label = "University",
-                        value = university
-                    )
-
-                    ProfileField(
-                        label = "Gender",
-                        value = gender
-                    )
+                    if (emailText.isNotBlank()) {
+                        ProfileField(
+                            label = "Email",
+                            value = emailText
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(15.dp))
 
                 // ---------------- BIO ----------------
-
                 ProfileInfoCard(
                     title = "Bio"
                 ) {
-
                     Text(
                         text = bio,
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurface,
                         lineHeight = 21.sp
                     )
+                }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-                    Text(
-                        text = "Edit Bio",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable {
-                            bio = if (
-                                bio == "Computer Science student • Tech enthusiast"
-                            ) {
-                                "Computer Science student"
-                            } else {
-                                "Computer Science student • Tech enthusiast"
-                            }
+                // ---------------- LOG OUT BUTTON ----------------
+                Button(
+                    onClick = {
+                        scope.launch {
+                            authRepository.signOut()
+                            onLogOutClick()
                         }
-                    )
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Log Out", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
 
                 Spacer(modifier = Modifier.height(25.dp))
 
                 // ---------------- POSTS ----------------
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-
                     Text(
                         text = "Posts Created",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
                     )
-
                     Spacer(modifier = Modifier.width(8.dp))
-
                     Text(
                         text = "(${posts.size})",
                         fontSize = 15.sp,
@@ -325,11 +293,8 @@ fun ProfileScreen(
             }
 
             // ---------------- POST CARDS ----------------
-
             items(posts) { post ->
-
                 PostCard(post)
-
                 Spacer(modifier = Modifier.height(14.dp))
             }
 
@@ -350,17 +315,14 @@ fun ProfileScreenPreview() {
     }
 }
 
-
 // ============================================================
 // PROFILE INFO CARD
 // ============================================================
-
 @Composable
 fun ProfileInfoCard(
     title: String,
     content: @Composable ColumnScope.() -> Unit
 ) {
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -371,49 +333,40 @@ fun ProfileInfoCard(
             defaultElevation = 2.dp
         )
     ) {
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-
             Text(
                 text = title,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold
             )
-
             Spacer(modifier = Modifier.height(12.dp))
-
             content()
         }
     }
 }
 
-
 // ============================================================
 // PROFILE FIELD
 // ============================================================
-
 @Composable
 fun ProfileField(
     label: String,
     value: String
 ) {
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
     ) {
-
         Text(
             text = label,
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-
         Text(
             text = value,
             fontSize = 15.sp,
@@ -422,14 +375,11 @@ fun ProfileField(
     }
 }
 
-
 // ============================================================
 // POST CARD
 // ============================================================
-
 @Composable
 fun PostCard(post: UserPost) {
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -440,36 +390,28 @@ fun PostCard(post: UserPost) {
             defaultElevation = 6.dp
         )
     ) {
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(15.dp)
         ) {
-
             Text(
                 text = post.title,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold
             )
-
             Spacer(modifier = Modifier.height(7.dp))
-
             Text(
                 text = post.description,
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 18.sp
             )
-
             Spacer(modifier = Modifier.height(10.dp))
-
-            // Category
             Surface(
                 shape = RoundedCornerShape(5.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant
             ) {
-
                 Text(
                     text = post.category,
                     fontSize = 11.sp,
@@ -479,21 +421,16 @@ fun PostCard(post: UserPost) {
                     )
                 )
             }
-
             Spacer(modifier = Modifier.height(10.dp))
-
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
-
                 Text(
                     text = "♥ ${post.likes}",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-
                 Spacer(modifier = Modifier.width(15.dp))
-
                 Text(
                     text = "${post.answers} answers",
                     fontSize = 12.sp,

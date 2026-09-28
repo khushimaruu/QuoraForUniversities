@@ -4,15 +4,15 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-
+import androidx.compose.runtime.*
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
+import com.MADproject.quoraforuniversities.data.AuthRepository
+import com.MADproject.quoraforuniversities.data.PostRepository
+import com.MADproject.quoraforuniversities.data.ProfileRepository
+import com.MADproject.quoraforuniversities.ui.addpost.AddPostScreen
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -30,75 +30,56 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun CampusQnAApp() {
+fun CampusQnAApp(
+    authRepository: AuthRepository = remember { AuthRepository() },
+    postRepository: PostRepository = remember { PostRepository() },
+    profileRepository: ProfileRepository = remember { ProfileRepository() }
+) {
+    val scope = rememberCoroutineScope()
 
     var currentScreen by remember {
-        mutableStateOf("landing")
+        mutableStateOf(if (authRepository.isLoggedIn()) "home" else "landing")
     }
 
     var selectedQuestion by remember {
         mutableStateOf<QuestionUiModel?>(null)
     }
 
-    // ---------------------------------------------------------
-    // SAMPLE QUESTIONS
-    // ---------------------------------------------------------
+    var questions by remember {
+        mutableStateOf<List<QuestionUiModel>>(emptyList())
+    }
 
-    val questions = listOf(
+    var isFeedLoading by remember {
+        mutableStateOf(false)
+    }
 
-        QuestionUiModel(
-            id = "1",
-            title = "How do I add a backlog course to my timetable?",
-            body = "I failed one course last semester and need to retake it alongside my current courses. Not sure how registration handles this.",
-            authorName = "Anonymous",
-            isAnonymous = true,
-            tags = listOf(
-                "CSE",
-                "Year2",
-                "Registration"
-            ),
-            voteCount = 12,
-            answerCount = 4
-        ),
+    var replies by remember {
+        mutableStateOf<List<ReplyUiModel>>(emptyList())
+    }
 
-        QuestionUiModel(
-            id = "2",
-            title = "Best cafes near the north campus for group study?",
-            body = "Looking for a place with decent wifi and enough seating for 4-5 people, preferably open till late.",
-            authorName = "Riya Sharma",
-            isAnonymous = false,
-            tags = listOf(
-                "CampusLife"
-            ),
-            voteCount = 27,
-            answerCount = 9
-        )
-    )
+    fun refreshQuestions() {
+        scope.launch {
+            isFeedLoading = true
+            val result = postRepository.getPosts()
+            isFeedLoading = false
+            if (result.isSuccess) {
+                questions = result.getOrDefault(emptyList())
+            }
+        }
+    }
 
-    // ---------------------------------------------------------
-    // SAMPLE REPLIES
-    // ---------------------------------------------------------
+    fun refreshReplies(postId: String) {
+        scope.launch {
+            val result = postRepository.getReplies(postId)
+            if (result.isSuccess) {
+                replies = result.getOrDefault(emptyList())
+            }
+        }
+    }
 
-    val replies = listOf(
-
-        ReplyUiModel(
-            id = "1",
-            authorName = "Aarav",
-            body = "You can usually add the backlog course during the registration period.",
-            voteCount = 0
-        ),
-
-        ReplyUiModel(
-            id = "2",
-            authorName = "Anonymous",
-            body = "I had the same issue last semester. Check with your department office.",
-            voteCount = 0
-        )
-    )
-
-    // ---------------------------------------------------------
-    // SCREEN NAVIGATION
-    // ---------------------------------------------------------
+    LaunchedEffect(Unit) {
+        refreshQuestions()
+    }
 
     when (currentScreen) {
 
@@ -115,10 +96,12 @@ fun CampusQnAApp() {
 
         "login" -> {
             LoginPage(
+                authRepository = authRepository,
                 onBackClick = {
                     currentScreen = "landing"
                 },
                 onLoginSuccess = {
+                    refreshQuestions()
                     currentScreen = "home"
                 },
                 onNavigateToSignUp = {
@@ -129,10 +112,12 @@ fun CampusQnAApp() {
 
         "signup" -> {
             SignUpPage(
+                authRepository = authRepository,
                 onBackClick = {
                     currentScreen = "landing"
                 },
                 onSignUpSuccess = {
+                    refreshQuestions()
                     currentScreen = "home"
                 },
                 onNavigateToLogin = {
@@ -141,192 +126,115 @@ fun CampusQnAApp() {
             )
         }
 
-        // =====================================================
-        // HOME
-        // =====================================================
-
         "home" -> {
-
             HomeScreen(
-
                 questions = questions,
-
+                isLoading = isFeedLoading,
                 onQuestionClick = { questionId ->
-
-                    selectedQuestion = questions.find { question ->
-                        question.id == questionId
-                    }
-
+                    selectedQuestion = questions.find { it.id == questionId }
+                    refreshReplies(questionId)
                     currentScreen = "post"
                 },
-
-                onUpvoteClick = {
-                    // Add upvote logic later
+                onUpvoteClick = { questionId ->
+                    scope.launch {
+                        postRepository.votePost(questionId)
+                        refreshQuestions()
+                    }
                 },
-
                 onNavDestinationSelected = { destination ->
-
                     when (destination) {
-
-                        BottomNavDestination.HOME -> {
-                            currentScreen = "home"
-                        }
-
-                        BottomNavDestination.SEARCH -> {
-                            currentScreen = "search"
-                        }
-
-                        BottomNavDestination.PROFILE -> {
-                            currentScreen = "profile"
-                        }
-
-                        BottomNavDestination.ADD_POST -> {
-                            currentScreen = "add_post"
-                        }
+                        BottomNavDestination.HOME -> currentScreen = "home"
+                        BottomNavDestination.SEARCH -> currentScreen = "search"
+                        BottomNavDestination.PROFILE -> currentScreen = "profile"
+                        BottomNavDestination.ADD_POST -> currentScreen = "add_post"
                     }
                 }
             )
         }
 
-        // =====================================================
-        // POST DETAIL
-        // =====================================================
-// =====================================================
-// SEARCH
-// =====================================================
-
         "search" -> {
-
             SearchPage(
                 questions = questions,
-
                 onQuestionClick = { questionId ->
-
-                    selectedQuestion = questions.find { question ->
-                        question.id == questionId
-                    }
-
+                    selectedQuestion = questions.find { it.id == questionId }
+                    refreshReplies(questionId)
                     currentScreen = "post"
                 },
-
-                onUpvoteClick = {
-                    // Add logic later
+                onUpvoteClick = { questionId ->
+                    scope.launch {
+                        postRepository.votePost(questionId)
+                        refreshQuestions()
+                    }
                 },
-
                 onNavDestinationSelected = { destination ->
-
                     when (destination) {
-
-                        BottomNavDestination.HOME -> {
-                            currentScreen = "home"
-                        }
-
-                        BottomNavDestination.SEARCH -> {
-                            currentScreen = "search"
-                        }
-
-                        BottomNavDestination.PROFILE -> {
-                            currentScreen = "profile"
-                        }
-
-                        BottomNavDestination.ADD_POST -> {
-                            currentScreen = "add_post"
-                        }
+                        BottomNavDestination.HOME -> currentScreen = "home"
+                        BottomNavDestination.SEARCH -> currentScreen = "search"
+                        BottomNavDestination.PROFILE -> currentScreen = "profile"
+                        BottomNavDestination.ADD_POST -> currentScreen = "add_post"
                     }
                 }
             )
         }
 
         "post" -> {
-
             selectedQuestion?.let { question ->
-
                 PostDetailPage(
-
                     question = question,
-
                     replies = replies,
-
                     onBackClick = {
                         currentScreen = "home"
                     },
-
                     onUpvoteClick = {
-                        // Add upvote logic later
+                        scope.launch {
+                            postRepository.votePost(question.id)
+                            refreshQuestions()
+                        }
                     },
-
-                    onSubmitReply = {
-                        // Add reply logic later
+                    onSubmitReply = { text ->
+                        scope.launch {
+                            postRepository.createReply(question.id, text)
+                            refreshReplies(question.id)
+                        }
                     },
-
                     onNavDestinationSelected = { destination ->
-
                         when (destination) {
-
-                            BottomNavDestination.HOME -> {
-                                currentScreen = "home"
-                            }
-
-                            BottomNavDestination.SEARCH -> {
-                                currentScreen = "search"
-                            }
-
-                            BottomNavDestination.PROFILE -> {
-                                currentScreen = "profile"
-                            }
-
-                            BottomNavDestination.ADD_POST -> {
-                                currentScreen = "add_post"
-                            }
+                            BottomNavDestination.HOME -> currentScreen = "home"
+                            BottomNavDestination.SEARCH -> currentScreen = "search"
+                            BottomNavDestination.PROFILE -> currentScreen = "profile"
+                            BottomNavDestination.ADD_POST -> currentScreen = "add_post"
                         }
                     }
                 )
             }
         }
 
-        // =====================================================
-        // PROFILE
-        // =====================================================
-
         "profile" -> {
-
             ProfileScreen(
-
+                authRepository = authRepository,
+                profileRepository = profileRepository,
+                onLogOutClick = {
+                    currentScreen = "landing"
+                },
                 onNavDestinationSelected = { destination ->
-
                     when (destination) {
-
-                        BottomNavDestination.HOME -> {
-                            currentScreen = "home"
-                        }
-
-                        BottomNavDestination.SEARCH -> {
-                            currentScreen = "search"
-                        }
-
-                        BottomNavDestination.PROFILE -> {
-                            currentScreen = "profile"
-                        }
-
-                        BottomNavDestination.ADD_POST -> {
-                            currentScreen = "add_post"
-                        }
+                        BottomNavDestination.HOME -> currentScreen = "home"
+                        BottomNavDestination.SEARCH -> currentScreen = "search"
+                        BottomNavDestination.PROFILE -> currentScreen = "profile"
+                        BottomNavDestination.ADD_POST -> currentScreen = "add_post"
                     }
                 }
             )
         }
 
-        // =====================================================
-        // ADD POST
-        // =====================================================
-
         "add_post" -> {
-
-            com.MADproject.quoraforuniversities.ui.addpost.AddPostScreen(
+            AddPostScreen(
+                postRepository = postRepository,
                 onBack = {
                     currentScreen = "home"
                 },
                 onPosted = {
+                    refreshQuestions()
                     currentScreen = "home"
                 }
             )

@@ -8,7 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Upload
@@ -16,17 +16,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.MADproject.quoraforuniversities.components.AppHeader
+import com.MADproject.quoraforuniversities.data.PostRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
-import com.MADproject.quoraforuniversities.ui.theme.HeaderGradientEnd
-import com.MADproject.quoraforuniversities.ui.theme.HeaderGradientMid
-import com.MADproject.quoraforuniversities.ui.theme.HeaderGradientStart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -42,6 +39,7 @@ enum class PostCheckState { IDLE, CHECKING, PASSED, FAILED }
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AddPostScreen(
+    postRepository: PostRepository = remember { PostRepository() },
     onBack: () -> Unit = {},
     onPosted: () -> Unit = {}
 ) {
@@ -66,7 +64,7 @@ fun AddPostScreen(
                         .padding(top = 44.dp, start = 8.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.ArrowBack,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
                         tint = Color.White
                     )
@@ -101,18 +99,18 @@ fun AddPostScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(6.dp))
 
                     Text("Description", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     OutlinedTextField(
                         value = description,
                         onValueChange = { description = it; errorMessage = null },
-                        placeholder = { Text("Add details to help others answer...") },
+                        placeholder = { Text("Provide details, context, or specific questions...") },
+                        minLines = 4,
+                        maxLines = 6,
                         shape = RoundedCornerShape(10.dp),
                         colors = circleTextFieldColors(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
@@ -125,24 +123,26 @@ fun AddPostScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Choose theme", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                    Text(
-                        "Select one or more tags",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(12.dp))
+                    Text("Select Theme(s)", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    Text("Helps others find your post easily", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                    Spacer(Modifier.height(10.dp))
+
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        availableThemes.forEach { theme ->
-                            val selected = theme in selectedThemes
+                        availableThemes.forEach { tag ->
+                            val selected = selectedThemes.contains(tag)
                             ThemeChip(
-                                label = theme,
+                                label = tag,
                                 selected = selected,
                                 onClick = {
-                                    selectedThemes = if (selected) selectedThemes - theme else selectedThemes + theme
+                                    selectedThemes = if (selected) {
+                                        selectedThemes - tag
+                                    } else {
+                                        selectedThemes + tag
+                                    }
                                     errorMessage = null
                                 }
                             )
@@ -206,8 +206,21 @@ fun AddPostScreen(
                     scope.launch {
                         val passed = runDummyQualityCheck(title, description)
                         if (passed) {
-                            checkState = PostCheckState.PASSED
-                            showSuccessDialog = true
+                            val themeString = selectedThemes.joinToString(",")
+                            val result = postRepository.createPost(
+                                title = title.trim(),
+                                content = description.trim(),
+                                theme = themeString,
+                                isAnonymous = isAnonymous
+                            )
+                            if (result.isSuccess) {
+                                checkState = PostCheckState.PASSED
+                                showSuccessDialog = true
+                            } else {
+                                checkState = PostCheckState.FAILED
+                                errorMessage = result.exceptionOrNull()?.localizedMessage
+                                    ?: "Failed to post to Supabase."
+                            }
                         } else {
                             checkState = PostCheckState.FAILED
                             errorMessage = "This post didn't pass our quality check. Add more detail or rephrase it."
@@ -228,7 +241,7 @@ fun AddPostScreen(
                         strokeWidth = 2.dp
                     )
                     Spacer(Modifier.width(10.dp))
-                    Text("Checking quality...", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text("Posting...", color = Color.White, fontWeight = FontWeight.SemiBold)
                 } else {
                     Icon(Icons.Default.Upload, contentDescription = null, tint = Color.White)
                     Spacer(Modifier.width(8.dp))
@@ -300,30 +313,21 @@ private fun validatePost(title: String, description: String, themes: Set<String>
 }
 
 // ---------- Dummy quality check ----------
-// Placeholder for the real check. Later, replace the body of this function with
-// a call to the Gemini API (send title + description, parse a pass/fail + reason).
 private val bannedWords = listOf("idiot", "stupid", "hate", "dumb")
 
 private suspend fun runDummyQualityCheck(title: String, description: String): Boolean {
-    // Simulate network/API latency
-    delay(1400)
-
+    delay(1000)
     val combined = (title + " " + description).lowercase()
     val containsBannedWord = bannedWords.any { combined.contains(it) }
     val isLongEnough = description.trim().length >= 15
     val isNotAllCaps = title != title.uppercase() || title.length < 8
 
-    // TODO: swap this block for a real Gemini API call, e.g.:
-    // val result = geminiClient.checkPostQuality(title, description)
-    // return result.passed
-
     return !containsBannedWord && isLongEnough && isNotAllCaps
 }
 
-// ---------- Preview ----------
 @Preview(showBackground = true)
 @Composable
-private fun AddPostScreenPreview() {
+fun AddPostScreenPreview() {
     CampusQnATheme {
         AddPostScreen()
     }

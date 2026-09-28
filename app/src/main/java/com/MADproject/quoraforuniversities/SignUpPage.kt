@@ -20,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -30,11 +31,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.MADproject.quoraforuniversities.data.AuthRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SignUpPage(
+    authRepository: AuthRepository = remember { AuthRepository() },
     onBackClick: () -> Unit = {},
     onSignUpSuccess: () -> Unit = {},
     onNavigateToLogin: () -> Unit = {}
@@ -47,7 +51,9 @@ fun SignUpPage(
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
 
+    val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
 
     Scaffold(
@@ -280,38 +286,58 @@ fun SignUpPage(
                 // Sign Up Button
                 Button(
                     onClick = {
-                        when {
-                            fullName.isBlank() || email.isBlank() || universityName.isBlank() || password.isBlank() -> {
-                                errorMessage = "Please fill in all fields"
-                            }
-                            password != confirmPassword -> {
-                                errorMessage = "Passwords do not match"
-                            }
-                            password.length < 6 -> {
-                                errorMessage = "Password must be at least 6 characters"
-                            }
-                            else -> {
-                                onSignUpSuccess()
+                        if (fullName.isBlank() || email.isBlank() || password.isBlank()) {
+                            errorMessage = "Please fill in all required fields"
+                        } else if (password != confirmPassword) {
+                            errorMessage = "Passwords do not match"
+                        } else if (password.length < 6) {
+                            errorMessage = "Password must be at least 6 characters"
+                        } else {
+                            isLoading = true
+                            errorMessage = null
+                            scope.launch {
+                                val result = authRepository.signUp(
+                                    emailVal = email.trim(),
+                                    passwordVal = password.trim(),
+                                    nameVal = fullName.trim(),
+                                    usernameVal = email.substringBefore("@")
+                                )
+                                isLoading = false
+                                if (result.isSuccess) {
+                                    onSignUpSuccess()
+                                } else {
+                                    errorMessage = result.exceptionOrNull()?.localizedMessage
+                                        ?: "Sign up failed."
+                                }
                             }
                         }
                     },
+                    enabled = !isLoading,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(
-                        text = "Create Account",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text(
+                            text = "Create Account",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Login Redirection
+                // Already have account
                 Row(
-                    modifier = Modifier.padding(bottom = 32.dp),
+                    modifier = Modifier.padding(bottom = 24.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -320,7 +346,7 @@ fun SignUpPage(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "Login",
+                        text = "Log In",
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.secondary,
                         modifier = Modifier.clickable { onNavigateToLogin() }

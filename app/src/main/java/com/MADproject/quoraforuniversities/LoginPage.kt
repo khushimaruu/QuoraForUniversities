@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -28,11 +29,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.MADproject.quoraforuniversities.data.AuthRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginPage(
+    authRepository: AuthRepository = remember { AuthRepository() },
     onBackClick: () -> Unit = {},
     onLoginSuccess: () -> Unit = {},
     onNavigateToSignUp: () -> Unit = {}
@@ -41,7 +45,9 @@ fun LoginPage(
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
 
+    val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
 
     Scaffold(
@@ -104,7 +110,7 @@ fun LoginPage(
                         errorMessage = null
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("University Email / Username") },
+                    label = { Text("University Email") },
                     placeholder = { Text("student@university.edu") },
                     leadingIcon = {
                         Icon(
@@ -162,22 +168,6 @@ fun LoginPage(
                     shape = RoundedCornerShape(12.dp)
                 )
 
-                // Forgot Password link
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Text(
-                        text = "Forgot Password?",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable { /* Handle forgot password */ }
-                    )
-                }
-
                 if (errorMessage != null) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
@@ -195,19 +185,39 @@ fun LoginPage(
                         if (email.isBlank() || password.isBlank()) {
                             errorMessage = "Please enter both email and password"
                         } else {
-                            onLoginSuccess()
+                            isLoading = true
+                            errorMessage = null
+                            scope.launch {
+                                val result = authRepository.signIn(email.trim(), password.trim())
+                                isLoading = false
+                                if (result.isSuccess) {
+                                    onLoginSuccess()
+                                } else {
+                                    errorMessage = result.exceptionOrNull()?.localizedMessage
+                                        ?: "Login failed. Please check your credentials."
+                                }
+                            }
                         }
                     },
+                    enabled = !isLoading,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(
-                        text = "Login",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text(
+                            text = "Login",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
