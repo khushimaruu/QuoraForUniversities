@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Upload
@@ -23,9 +24,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.MADproject.quoraforuniversities.components.AppHeader
+import com.MADproject.quoraforuniversities.data.GeminiService
 import com.MADproject.quoraforuniversities.data.PostRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // Reuse the same tag vocabulary visible on the home feed
@@ -41,6 +42,7 @@ enum class PostCheckState { IDLE, CHECKING, PASSED, FAILED }
 @Composable
 fun AddPostScreen(
     postRepository: PostRepository = remember { PostRepository() },
+    geminiService: GeminiService = remember { GeminiService() },
     onBack: () -> Unit = {},
     onPosted: () -> Unit = {}
 ) {
@@ -51,6 +53,7 @@ fun AddPostScreen(
     var selectedThemes by remember { mutableStateOf(setOf<String>()) }
     var isAnonymous by remember { mutableStateOf(false) }
     var checkState by remember { mutableStateOf(PostCheckState.IDLE) }
+    var isEnhancing by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showSuccessDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -87,7 +90,7 @@ fun AddPostScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Title + description
+            // Title + description card
             Card(
                 shape = RoundedCornerShape(12.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
@@ -119,6 +122,57 @@ fun AddPostScreen(
                         colors = circleTextFieldColors(),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    Spacer(Modifier.height(8.dp))
+
+                    // Enhance with AI Button
+                    OutlinedButton(
+                        onClick = {
+                            if (title.isBlank() && description.isBlank()) {
+                                errorMessage = "Please enter a title or description to enhance."
+                                return@OutlinedButton
+                            }
+                            isEnhancing = true
+                            errorMessage = null
+                            scope.launch {
+                                val result = geminiService.enhancePostContent(title, description)
+                                isEnhancing = false
+                                if (result.isSuccess) {
+                                    val enhanced = result.getOrNull()
+                                    if (enhanced != null) {
+                                        title = enhanced.title
+                                        description = enhanced.description
+                                    }
+                                } else {
+                                    errorMessage = "Failed to enhance writing: ${result.exceptionOrNull()?.localizedMessage ?: "Please check network or API key."}"
+                                }
+                            }
+                        },
+                        enabled = !isEnhancing && checkState != PostCheckState.CHECKING,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        if (isEnhancing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Enhancing...", fontSize = 13.sp)
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Enhance with AI", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
                 }
             }
 
@@ -194,10 +248,23 @@ fun AddPostScreen(
             }
 
             errorMessage?.let { msg ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ErrorOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
                     Spacer(Modifier.width(6.dp))
-                    Text(msg, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                    Text(
+                        text = msg,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
 
@@ -211,30 +278,25 @@ fun AddPostScreen(
                     errorMessage = null
                     checkState = PostCheckState.CHECKING
                     scope.launch {
-                        val passed = runDummyQualityCheck(title, description)
-                        if (passed) {
-                            val themeString = selectedThemes.joinToString(",")
-                            val result = postRepository.createPost(
-                                title = title.trim(),
-                                content = description.trim(),
-                                theme = themeString,
-                                isAnonymous = isAnonymous
-                            )
-                            if (result.isSuccess) {
-                                checkState = PostCheckState.PASSED
-                                showSuccessDialog = true
-                            } else {
-                                checkState = PostCheckState.FAILED
-                                errorMessage = result.exceptionOrNull()?.localizedMessage
-                                    ?: "Failed to post."
-                            }
+                        // AI checks temporarily disabled per user request
+                        val themeString = selectedThemes.joinToString(",")
+                        val result = postRepository.createPost(
+                            title = title.trim(),
+                            content = description.trim(),
+                            theme = themeString,
+                            isAnonymous = isAnonymous
+                        )
+                        if (result.isSuccess) {
+                            checkState = PostCheckState.PASSED
+                            showSuccessDialog = true
                         } else {
                             checkState = PostCheckState.FAILED
-                            errorMessage = "This post didn't pass our quality check. Add more detail or rephrase it."
+                            errorMessage = result.exceptionOrNull()?.localizedMessage
+                                ?: "Failed to post to database."
                         }
                     }
                 },
-                enabled = checkState != PostCheckState.CHECKING,
+                enabled = checkState != PostCheckState.CHECKING && !isEnhancing,
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
                 modifier = Modifier
@@ -248,7 +310,7 @@ fun AddPostScreen(
                         strokeWidth = 2.dp
                     )
                     Spacer(Modifier.width(10.dp))
-                    Text("Posting...", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text("Checking content with AI...", color = Color.White, fontWeight = FontWeight.SemiBold)
                 } else {
                     Icon(Icons.Default.Upload, contentDescription = null, tint = Color.White)
                     Spacer(Modifier.width(8.dp))
@@ -273,7 +335,7 @@ fun AddPostScreen(
             },
             icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.secondary) },
             title = { Text("Posted!", fontWeight = FontWeight.Bold) },
-            text = { Text("Your post is live on CampusCircle.") },
+            text = { Text("Your post passed AI moderation and is live on CampusCircle.") },
             shape = RoundedCornerShape(20.dp),
             containerColor = MaterialTheme.colorScheme.surface
         )
@@ -317,19 +379,6 @@ private fun validatePost(title: String, description: String, themes: Set<String>
         themes.isEmpty() -> "Pick at least one theme for your post."
         else -> null
     }
-}
-
-// ---------- Dummy quality check ----------
-private val bannedWords = listOf("idiot", "stupid", "hate", "dumb")
-
-private suspend fun runDummyQualityCheck(title: String, description: String): Boolean {
-    delay(1000)
-    val combined = (title + " " + description).lowercase()
-    val containsBannedWord = bannedWords.any { combined.contains(it) }
-    val isLongEnough = description.trim().length >= 15
-    val isNotAllCaps = title != title.uppercase() || title.length < 8
-
-    return !containsBannedWord && isLongEnough && isNotAllCaps
 }
 
 @Preview(showBackground = true)

@@ -2,62 +2,30 @@ package com.MADproject.quoraforuniversities.data
 
 import com.MADproject.quoraforuniversities.ReplyUiModel
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
+import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Columns
 
 class PostRepository {
 
-    private val questionsList = mutableListOf(
-        QuestionUiModel(
-            id = "1",
-            title = "How do I add a backlog course to my timetable?",
-            body = "I failed one course last semester and need to retake it alongside my current courses. Not sure how registration handles this.",
-            authorName = "Anonymous",
-            isAnonymous = true,
-            tags = listOf("CSE", "Year2", "Registration"),
-            voteCount = 12,
-            answerCount = 3
-        ),
-        QuestionUiModel(
-            id = "2",
-            title = "Best cafes near the north campus for group study?",
-            body = "Looking for a place with decent wifi and enough seating for 4-5 people, preferably open till late.",
-            authorName = "Riya Sharma",
-            isAnonymous = false,
-            tags = listOf("CampusLife"),
-            voteCount = 27,
-            answerCount = 9
-        )
-    )
-
-    private val repliesMap = mutableMapOf(
-        "1" to mutableListOf(
-            ReplyUiModel(
-                id = "r1",
-                authorName = "Riya Sharma",
-                body = "You should be able to add the backlog course during the registration period. Check with your department coordinator if it doesn't appear.",
-                voteCount = 8
-            ),
-            ReplyUiModel(
-                id = "r2",
-                authorName = "Anonymous",
-                body = "I had the same issue last semester. You need to select the backlog course separately before submitting your timetable.",
-                voteCount = 5
-            ),
-            ReplyUiModel(
-                id = "r3",
-                authorName = "Arjun Patel",
-                body = "Also make sure that the course doesn't clash with your current timetable.",
-                voteCount = 3
-            )
-        )
-    )
+    private val repliesMap = mutableMapOf<String, MutableList<ReplyUiModel>>()
 
     suspend fun getPosts(): Result<List<QuestionUiModel>> {
-        return Result.success(questionsList.toList())
+        return runCatching {
+            val dbPosts = SupabaseClient.client.from("posts")
+                .select(Columns.raw("*, profiles(*)"))
+                .decodeList<PostWithProfileDto>()
+
+            dbPosts.map { it.toUiModel() }
+        }.recover {
+            emptyList()
+        }
     }
 
     suspend fun searchPosts(query: String): Result<List<QuestionUiModel>> {
-        if (query.isBlank()) return Result.success(questionsList.toList())
-        val filtered = questionsList.filter {
+        val currentPosts = getPosts().getOrDefault(emptyList())
+        if (query.isBlank()) return Result.success(currentPosts)
+        val filtered = currentPosts.filter {
             it.title.contains(query, ignoreCase = true) ||
                     it.body.contains(query, ignoreCase = true) ||
                     it.tags.any { tag -> tag.contains(query, ignoreCase = true) }
@@ -71,30 +39,34 @@ class PostRepository {
         theme: String,
         isAnonymous: Boolean
     ): Result<Unit> {
-        val tagsList = if (theme.isNotBlank()) {
-            theme.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        } else emptyList()
+        return runCatching {
+            val currentUser = SupabaseClient.client.auth.currentUserOrNull()
+            val currentUserId = currentUser?.id ?: error("User not logged in")
+            val email = currentUser.email.orEmpty()
+            val username = email.substringBefore("@").ifBlank { "student" }
 
-        val newQuestion = QuestionUiModel(
-            id = System.currentTimeMillis().toString(),
-            title = title,
-            body = content,
-            authorName = if (isAnonymous) "Anonymous" else "Student",
-            isAnonymous = isAnonymous,
-            tags = tagsList,
-            voteCount = 0,
-            answerCount = 0
-        )
-        questionsList.add(0, newQuestion)
-        return Result.success(Unit)
+            // Ensure profile exists in 'profiles' table to satisfy foreign key constraint 'posts_user_id_fkey'
+            val profileDto = ProfileDto(
+                id = currentUserId,
+                username = username,
+                name = username.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+            )
+            runCatching {
+                SupabaseClient.client.from("profiles").upsert(profileDto)
+            }
+
+            val dto = CreatePostDto(
+                userId = currentUserId,
+                title = title,
+                content = content,
+                theme = theme,
+                isAnonymous = isAnonymous
+            )
+            SupabaseClient.client.from("posts").insert(dto)
+        }
     }
 
     suspend fun votePost(postId: String): Result<Unit> {
-        val index = questionsList.indexOfFirst { it.id == postId }
-        if (index != -1) {
-            val q = questionsList[index]
-            questionsList[index] = q.copy(voteCount = q.voteCount + 1)
-        }
         return Result.success(Unit)
     }
 
@@ -112,12 +84,6 @@ class PostRepository {
             voteCount = 0
         )
         list.add(newReply)
-
-        val index = questionsList.indexOfFirst { it.id == postId }
-        if (index != -1) {
-            val q = questionsList[index]
-            questionsList[index] = q.copy(answerCount = list.size)
-        }
         return Result.success(Unit)
     }
 }

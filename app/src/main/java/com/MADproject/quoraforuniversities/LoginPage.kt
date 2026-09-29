@@ -29,6 +29,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.MADproject.quoraforuniversities.components.ErrorBanner
+import com.MADproject.quoraforuniversities.components.formatAuthErrorMessage
 import com.MADproject.quoraforuniversities.data.AuthRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 import kotlinx.coroutines.launch
@@ -168,33 +170,35 @@ fun LoginPage(
                     shape = RoundedCornerShape(12.dp)
                 )
 
-                if (errorMessage != null) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = errorMessage ?: "",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                errorMessage?.let { msg ->
+                    Spacer(modifier = Modifier.height(16.dp))
+                    ErrorBanner(message = msg)
                 }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(28.dp))
 
                 // Login Button
                 Button(
                     onClick = {
-                        if (email.isBlank() || password.isBlank()) {
-                            errorMessage = "Please enter both email and password"
+                        val trimmedEmail = email.trim()
+                        val trimmedPassword = password.trim()
+                        if (trimmedEmail.isBlank() || trimmedPassword.isBlank()) {
+                            errorMessage = "Please enter both email and password."
+                        } else if (!trimmedEmail.contains("@") || !trimmedEmail.contains(".")) {
+                            errorMessage = "Please enter a valid university email address."
                         } else {
                             isLoading = true
                             errorMessage = null
                             scope.launch {
-                                val result = authRepository.signIn(email.trim(), password.trim())
+                                val result = authRepository.signIn(trimmedEmail, trimmedPassword)
                                 isLoading = false
                                 if (result.isSuccess) {
                                     onLoginSuccess()
                                 } else {
-                                    errorMessage = result.exceptionOrNull()?.localizedMessage
-                                        ?: "Login failed. Please check your credentials."
+                                    errorMessage = formatAuthErrorMessage(
+                                        result.exceptionOrNull(),
+                                        "Login failed. Please check your credentials and try again."
+                                    )
                                 }
                             }
                         }

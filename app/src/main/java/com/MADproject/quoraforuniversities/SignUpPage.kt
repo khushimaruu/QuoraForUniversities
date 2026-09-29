@@ -31,6 +31,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.MADproject.quoraforuniversities.components.ErrorBanner
+import com.MADproject.quoraforuniversities.components.formatAuthErrorMessage
 import com.MADproject.quoraforuniversities.data.AuthRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 import kotlinx.coroutines.launch
@@ -272,13 +274,9 @@ fun SignUpPage(
                     shape = RoundedCornerShape(12.dp)
                 )
 
-                if (errorMessage != null) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = errorMessage ?: "",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                errorMessage?.let { msg ->
+                    Spacer(modifier = Modifier.height(16.dp))
+                    ErrorBanner(message = msg)
                 }
 
                 Spacer(modifier = Modifier.height(28.dp))
@@ -286,28 +284,37 @@ fun SignUpPage(
                 // Sign Up Button
                 Button(
                     onClick = {
-                        if (fullName.isBlank() || email.isBlank() || password.isBlank()) {
-                            errorMessage = "Please fill in all required fields"
-                        } else if (password != confirmPassword) {
-                            errorMessage = "Passwords do not match"
-                        } else if (password.length < 6) {
-                            errorMessage = "Password must be at least 6 characters"
+                        val trimmedName = fullName.trim()
+                        val trimmedEmail = email.trim()
+                        val trimmedPassword = password.trim()
+                        val trimmedConfirmPassword = confirmPassword.trim()
+
+                        if (trimmedName.isBlank() || trimmedEmail.isBlank() || trimmedPassword.isBlank()) {
+                            errorMessage = "Please fill in all required fields."
+                        } else if (!trimmedEmail.contains("@") || !trimmedEmail.contains(".")) {
+                            errorMessage = "Please enter a valid university email address."
+                        } else if (trimmedPassword != trimmedConfirmPassword) {
+                            errorMessage = "Passwords do not match."
+                        } else if (trimmedPassword.length < 6) {
+                            errorMessage = "Password must be at least 6 characters long."
                         } else {
                             isLoading = true
                             errorMessage = null
                             scope.launch {
                                 val result = authRepository.signUp(
-                                    emailVal = email.trim(),
-                                    passwordVal = password.trim(),
-                                    nameVal = fullName.trim(),
-                                    usernameVal = email.substringBefore("@")
+                                    emailVal = trimmedEmail,
+                                    passwordVal = trimmedPassword,
+                                    nameVal = trimmedName,
+                                    usernameVal = trimmedEmail.substringBefore("@")
                                 )
                                 isLoading = false
                                 if (result.isSuccess) {
                                     onSignUpSuccess()
                                 } else {
-                                    errorMessage = result.exceptionOrNull()?.localizedMessage
-                                        ?: "Sign up failed."
+                                    errorMessage = formatAuthErrorMessage(
+                                        result.exceptionOrNull(),
+                                        "Sign up failed. Please check your details and try again."
+                                    )
                                 }
                             }
                         }

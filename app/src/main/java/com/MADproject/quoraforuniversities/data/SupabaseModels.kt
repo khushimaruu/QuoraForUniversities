@@ -18,6 +18,19 @@ data class PostDto(
 )
 
 @Serializable
+data class PostWithProfileDto(
+    val id: String? = null,
+    @SerialName("user_id") val userId: String? = null,
+    val title: String = "",
+    val content: String = "",
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+    val theme: String = "",
+    @SerialName("is_anonymous") val isAnonymous: Boolean = false,
+    val profiles: ProfileDto? = null
+)
+
+@Serializable
 data class CreatePostDto(
     @SerialName("user_id") val userId: String? = null,
     val title: String,
@@ -85,6 +98,32 @@ fun PostDto.toUiModel(
         title = title,
         body = content,
         authorName = if (isAnonymous) "Anonymous" else authorName,
+        isAnonymous = isAnonymous,
+        tags = tagsList,
+        voteCount = voteCount,
+        answerCount = answerCount
+    )
+}
+
+fun PostWithProfileDto.toUiModel(
+    voteCount: Int = 0,
+    answerCount: Int = 0
+): QuestionUiModel {
+    val tagsList = if (theme.isNotBlank()) {
+        theme.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    } else emptyList()
+
+    val resolvedAuthorName = if (isAnonymous) {
+        "Anonymous"
+    } else {
+        profiles?.name ?: profiles?.username ?: "Student"
+    }
+
+    return QuestionUiModel(
+        id = id ?: "",
+        title = title,
+        body = content,
+        authorName = resolvedAuthorName,
         isAnonymous = isAnonymous,
         tags = tagsList,
         voteCount = voteCount,
