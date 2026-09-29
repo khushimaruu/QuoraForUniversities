@@ -2,12 +2,10 @@ package com.MADproject.quoraforuniversities.data
 
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
-import io.github.jan.supabase.postgrest.postgrest
 
 class AuthRepository {
 
     private val auth = SupabaseClient.client.auth
-    private val postgrest = SupabaseClient.client.postgrest
 
     suspend fun signUp(
         emailVal: String,
@@ -19,17 +17,6 @@ class AuthRepository {
             auth.signUpWith(Email) {
                 email = emailVal
                 password = passwordVal
-            }
-            val user = auth.currentUserOrNull()
-            if (user != null) {
-                val profile = ProfileDto(
-                    id = user.id,
-                    username = usernameVal.ifBlank { emailVal.substringBefore("@") },
-                    name = nameVal.ifBlank { "Student" }
-                )
-                runCatching {
-                    postgrest["profiles"].insert(profile)
-                }
             }
         }
     }

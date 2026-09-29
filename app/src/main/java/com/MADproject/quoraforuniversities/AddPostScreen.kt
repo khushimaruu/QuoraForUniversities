@@ -1,5 +1,6 @@
 package com.MADproject.quoraforuniversities.ui.addpost
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -43,6 +44,8 @@ fun AddPostScreen(
     onBack: () -> Unit = {},
     onPosted: () -> Unit = {}
 ) {
+    BackHandler(onBack = onBack)
+
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var selectedThemes by remember { mutableStateOf(setOf<String>()) }
@@ -55,13 +58,17 @@ fun AddPostScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Box {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.statusBars)
+            ) {
                 AppHeader(subtitle = "New Post")
                 IconButton(
                     onClick = onBack,
                     modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(top = 44.dp, start = 8.dp)
+                        .align(Alignment.CenterStart)
+                        .padding(start = 12.dp)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -219,7 +226,7 @@ fun AddPostScreen(
                             } else {
                                 checkState = PostCheckState.FAILED
                                 errorMessage = result.exceptionOrNull()?.localizedMessage
-                                    ?: "Failed to post to Supabase."
+                                    ?: "Failed to post."
                             }
                         } else {
                             checkState = PostCheckState.FAILED

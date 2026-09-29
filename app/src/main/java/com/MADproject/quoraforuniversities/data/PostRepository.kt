@@ -2,59 +2,67 @@ package com.MADproject.quoraforuniversities.data
 
 import com.MADproject.quoraforuniversities.ReplyUiModel
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
-import io.github.jan.supabase.auth.auth
-import io.github.jan.supabase.postgrest.postgrest
 
 class PostRepository {
 
-    private val postgrest = SupabaseClient.client.postgrest
-    private val auth = SupabaseClient.client.auth
+    private val questionsList = mutableListOf(
+        QuestionUiModel(
+            id = "1",
+            title = "How do I add a backlog course to my timetable?",
+            body = "I failed one course last semester and need to retake it alongside my current courses. Not sure how registration handles this.",
+            authorName = "Anonymous",
+            isAnonymous = true,
+            tags = listOf("CSE", "Year2", "Registration"),
+            voteCount = 12,
+            answerCount = 3
+        ),
+        QuestionUiModel(
+            id = "2",
+            title = "Best cafes near the north campus for group study?",
+            body = "Looking for a place with decent wifi and enough seating for 4-5 people, preferably open till late.",
+            authorName = "Riya Sharma",
+            isAnonymous = false,
+            tags = listOf("CampusLife"),
+            voteCount = 27,
+            answerCount = 9
+        )
+    )
+
+    private val repliesMap = mutableMapOf(
+        "1" to mutableListOf(
+            ReplyUiModel(
+                id = "r1",
+                authorName = "Riya Sharma",
+                body = "You should be able to add the backlog course during the registration period. Check with your department coordinator if it doesn't appear.",
+                voteCount = 8
+            ),
+            ReplyUiModel(
+                id = "r2",
+                authorName = "Anonymous",
+                body = "I had the same issue last semester. You need to select the backlog course separately before submitting your timetable.",
+                voteCount = 5
+            ),
+            ReplyUiModel(
+                id = "r3",
+                authorName = "Arjun Patel",
+                body = "Also make sure that the course doesn't clash with your current timetable.",
+                voteCount = 3
+            )
+        )
+    )
 
     suspend fun getPosts(): Result<List<QuestionUiModel>> {
-        return runCatching {
-            val posts = postgrest["posts"].select().decodeList<PostDto>()
-            val profilesMap = runCatching {
-                postgrest["profiles"].select().decodeList<ProfileDto>()
-                    .associateBy { it.id }
-            }.getOrDefault(emptyMap())
-
-            val votesMap = runCatching {
-                postgrest["votes"].select().decodeList<VoteDto>()
-                    .filter { it.postId != null }
-                    .groupingBy { it.postId!! }
-                    .eachCount()
-            }.getOrDefault(emptyMap())
-
-            val repliesMap = runCatching {
-                postgrest["replies"].select().decodeList<ReplyDto>()
-                    .groupingBy { it.postId }
-                    .eachCount()
-            }.getOrDefault(emptyMap())
-
-            posts.map { post ->
-                val author = if (post.userId != null) profilesMap[post.userId] else null
-                val authorName = author?.name ?: author?.username ?: "Student"
-                val votes = post.id?.let { votesMap[it] } ?: 0
-                val answers = post.id?.let { repliesMap[it] } ?: 0
-
-                post.toUiModel(
-                    authorName = authorName,
-                    voteCount = votes,
-                    answerCount = answers
-                )
-            }
-        }
+        return Result.success(questionsList.toList())
     }
 
     suspend fun searchPosts(query: String): Result<List<QuestionUiModel>> {
-        return getPosts().map { list ->
-            if (query.isBlank()) list
-            else list.filter {
-                it.title.contains(query, ignoreCase = true) ||
-                        it.body.contains(query, ignoreCase = true) ||
-                        it.tags.any { tag -> tag.contains(query, ignoreCase = true) }
-            }
+        if (query.isBlank()) return Result.success(questionsList.toList())
+        val filtered = questionsList.filter {
+            it.title.contains(query, ignoreCase = true) ||
+                    it.body.contains(query, ignoreCase = true) ||
+                    it.tags.any { tag -> tag.contains(query, ignoreCase = true) }
         }
+        return Result.success(filtered)
     }
 
     suspend fun createPost(
@@ -63,75 +71,53 @@ class PostRepository {
         theme: String,
         isAnonymous: Boolean
     ): Result<Unit> {
-        return runCatching {
-            val userId = auth.currentUserOrNull()?.id
-            val newPost = CreatePostDto(
-                userId = userId,
-                title = title,
-                content = content,
-                theme = theme,
-                isAnonymous = isAnonymous
-            )
-            postgrest["posts"].insert(newPost)
-        }
+        val tagsList = if (theme.isNotBlank()) {
+            theme.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        } else emptyList()
+
+        val newQuestion = QuestionUiModel(
+            id = System.currentTimeMillis().toString(),
+            title = title,
+            body = content,
+            authorName = if (isAnonymous) "Anonymous" else "Student",
+            isAnonymous = isAnonymous,
+            tags = tagsList,
+            voteCount = 0,
+            answerCount = 0
+        )
+        questionsList.add(0, newQuestion)
+        return Result.success(Unit)
     }
 
     suspend fun votePost(postId: String): Result<Unit> {
-        return runCatching {
-            val userId = auth.currentUserOrNull()?.id ?: return@runCatching
-            val newVote = CreateVoteDto(
-                userId = userId,
-                postId = postId,
-                voteType = "upvote"
-            )
-            postgrest["votes"].insert(newVote)
+        val index = questionsList.indexOfFirst { it.id == postId }
+        if (index != -1) {
+            val q = questionsList[index]
+            questionsList[index] = q.copy(voteCount = q.voteCount + 1)
         }
+        return Result.success(Unit)
     }
 
     suspend fun getReplies(postId: String): Result<List<ReplyUiModel>> {
-        return runCatching {
-            val replies = postgrest["replies"]
-                .select {
-                    filter {
-                        eq("post_id", postId)
-                    }
-                }
-                .decodeList<ReplyDto>()
-
-            val profilesMap = runCatching {
-                postgrest["profiles"].select().decodeList<ProfileDto>()
-                    .associateBy { it.id }
-            }.getOrDefault(emptyMap())
-
-            val votesMap = runCatching {
-                postgrest["votes"].select().decodeList<VoteDto>()
-                    .filter { it.replyId != null }
-                    .groupingBy { it.replyId!! }
-                    .eachCount()
-            }.getOrDefault(emptyMap())
-
-            replies.map { reply ->
-                val author = if (reply.userId != null) profilesMap[reply.userId] else null
-                val authorName = author?.name ?: author?.username ?: "Student"
-                val votes = reply.id?.let { votesMap[it] } ?: 0
-
-                reply.toUiModel(
-                    authorName = authorName,
-                    voteCount = votes
-                )
-            }
-        }
+        val list = repliesMap[postId] ?: emptyList()
+        return Result.success(list.toList())
     }
 
     suspend fun createReply(postId: String, content: String): Result<Unit> {
-        return runCatching {
-            val userId = auth.currentUserOrNull()?.id
-            val newReply = CreateReplyDto(
-                userId = userId,
-                postId = postId,
-                content = content
-            )
-            postgrest["replies"].insert(newReply)
+        val list = repliesMap.getOrPut(postId) { mutableListOf() }
+        val newReply = ReplyUiModel(
+            id = System.currentTimeMillis().toString(),
+            authorName = "Student",
+            body = content,
+            voteCount = 0
+        )
+        list.add(newReply)
+
+        val index = questionsList.indexOfFirst { it.id == postId }
+        if (index != -1) {
+            val q = questionsList[index]
+            questionsList[index] = q.copy(answerCount = list.size)
         }
+        return Result.success(Unit)
     }
 }

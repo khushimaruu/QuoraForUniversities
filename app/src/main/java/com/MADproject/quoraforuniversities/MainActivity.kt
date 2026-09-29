@@ -2,9 +2,11 @@ package com.MADproject.quoraforuniversities
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
 import com.MADproject.quoraforuniversities.data.AuthRepository
@@ -37,7 +39,7 @@ fun CampusQnAApp(
 ) {
     val scope = rememberCoroutineScope()
 
-    var currentScreen by remember {
+    var currentScreen by rememberSaveable {
         mutableStateOf(if (authRepository.isLoggedIn()) "home" else "landing")
     }
 
@@ -79,6 +81,13 @@ fun CampusQnAApp(
 
     LaunchedEffect(Unit) {
         refreshQuestions()
+    }
+
+    // Intercept system back button presses to return to home / landing
+    if (currentScreen != "home" && currentScreen != "landing") {
+        BackHandler {
+            currentScreen = if (authRepository.isLoggedIn()) "home" else "landing"
+        }
     }
 
     when (currentScreen) {
