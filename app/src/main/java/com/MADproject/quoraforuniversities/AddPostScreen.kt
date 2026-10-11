@@ -278,7 +278,21 @@ fun AddPostScreen(
                     errorMessage = null
                     checkState = PostCheckState.CHECKING
                     scope.launch {
-                        // AI checks temporarily disabled per user request
+                        val moderationResult = geminiService.checkContentModeration(title.trim(), description.trim())
+                        if (moderationResult.isSuccess) {
+                            val mod = moderationResult.getOrNull()
+                            if (mod != null && !mod.isAllowed) {
+                                checkState = PostCheckState.FAILED
+                                errorMessage = mod.reason ?: "Post flagged by AI content moderation."
+                                return@launch
+                            }
+                        } else {
+                            checkState = PostCheckState.FAILED
+                            errorMessage = moderationResult.exceptionOrNull()?.localizedMessage
+                                ?: "AI content moderation check failed."
+                            return@launch
+                        }
+
                         val themeString = selectedThemes.joinToString(",")
                         val result = postRepository.createPost(
                             title = title.trim(),
