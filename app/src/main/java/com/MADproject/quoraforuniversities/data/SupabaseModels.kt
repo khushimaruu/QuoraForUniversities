@@ -42,8 +42,9 @@ data class CreatePostDto(
 @Serializable
 data class ProfileDto(
     val id: String,
-    val username: String? = null,
+    val username: String = "",
     val name: String? = null,
+    @SerialName("last_name") val lastName: String? = null,
     val gender: String? = null,
     val bio: String? = null,
     @SerialName("created_at") val createdAt: String? = null
@@ -72,16 +73,8 @@ data class VoteDto(
     @SerialName("user_id") val userId: String? = null,
     @SerialName("post_id") val postId: String? = null,
     @SerialName("reply_id") val replyId: String? = null,
-    @SerialName("vote_type") val voteType: String = "upvote",
+    @SerialName("vote_type") val voteType: Int = 1,
     @SerialName("created_at") val createdAt: String? = null
-)
-
-@Serializable
-data class CreateVoteDto(
-    @SerialName("user_id") val userId: String,
-    @SerialName("post_id") val postId: String? = null,
-    @SerialName("reply_id") val replyId: String? = null,
-    @SerialName("vote_type") val voteType: String = "upvote"
 )
 
 fun PostDto.toUiModel(
@@ -113,11 +106,12 @@ fun PostWithProfileDto.toUiModel(
         theme.split(",").map { it.trim() }.filter { it.isNotEmpty() }
     } else emptyList()
 
-    val resolvedAuthorName = if (isAnonymous) {
-        "Anonymous"
-    } else {
-        profiles?.name ?: profiles?.username ?: "Student"
-    }
+    val fullName = listOfNotNull(profiles?.name, profiles?.lastName)
+        .joinToString(" ")
+        .trim()
+        .ifBlank { profiles?.username ?: "Student" }
+
+    val resolvedAuthorName = if (isAnonymous) "Anonymous" else fullName
 
     return QuestionUiModel(
         id = id ?: "",
