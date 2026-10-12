@@ -1,3 +1,4 @@
+
 package com.MADproject.quoraforuniversities
 
 import androidx.compose.foundation.background
@@ -19,7 +20,9 @@ import com.MADproject.quoraforuniversities.components.BottomNavBar
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import com.MADproject.quoraforuniversities.components.QuestionCard
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
+import com.MADproject.quoraforuniversities.data.PostRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
+import kotlinx.coroutines.delay
 
 @Composable
 fun SearchPage(
@@ -33,7 +36,23 @@ fun SearchPage(
         mutableStateOf("")
     }
 
-    // Create category names from the tags already used in questions
+    val postRepository = remember {
+        PostRepository()
+    }
+
+    var searchResults by remember {
+        mutableStateOf<List<QuestionUiModel>>(emptyList())
+    }
+
+    var isSearching by remember {
+        mutableStateOf(false)
+    }
+
+    var searchError by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    // CREATE CATEGORIES FROM EXISTING QUESTION TAGS
     val categories = remember(questions) {
         questions
             .flatMap { it.tags }
@@ -41,32 +60,32 @@ fun SearchPage(
             .sorted()
     }
 
-    // Search by question title, body, author or category/tag
-    val filteredQuestions = remember(searchQuery, questions) {
-        questions.filter { question ->
+    // SEARCH POSTS FROM SUPABASE
+    LaunchedEffect(searchQuery) {
 
-            question.title.contains(
-                searchQuery,
-                ignoreCase = true
-            ) ||
-
-                    question.body.contains(
-                        searchQuery,
-                        ignoreCase = true
-                    ) ||
-
-                    question.authorName.contains(
-                        searchQuery,
-                        ignoreCase = true
-                    ) ||
-
-                    question.tags.any { tag ->
-                        tag.contains(
-                            searchQuery,
-                            ignoreCase = true
-                        )
-                    }
+        if (searchQuery.isBlank()) {
+            searchResults = emptyList()
+            isSearching = false
+            searchError = null
+            return@LaunchedEffect
         }
+
+        isSearching = true
+        searchError = null
+
+        // WAIT UNTIL USER STOPS TYPING BRIEFLY
+        delay(300)
+
+        val result = postRepository.searchPosts(searchQuery)
+
+        result.onSuccess {
+            searchResults = it
+        }.onFailure {
+            searchResults = emptyList()
+            searchError = it.message ?: "Search failed"
+        }
+
+        isSearching = false
     }
 
     Scaffold(
@@ -102,6 +121,7 @@ fun SearchPage(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            // SEARCH BAR
             OutlinedTextField(
                 value = searchQuery,
 
@@ -112,7 +132,7 @@ fun SearchPage(
                 modifier = Modifier.fillMaxWidth(),
 
                 placeholder = {
-                    Text("Search questions, tags or users...")
+                    Text("Search questions or categories...")
                 },
 
                 leadingIcon = {
@@ -127,10 +147,7 @@ fun SearchPage(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // ---------------------------------------------------------
-            // SHOW CATEGORIES WHEN NOTHING IS BEING SEARCHED
-            // ---------------------------------------------------------
-
+            // SHOW CATEGORIES WHEN SEARCH IS EMPTY
             if (searchQuery.isBlank()) {
 
                 Text(
@@ -155,7 +172,8 @@ fun SearchPage(
                                 },
 
                             colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
+                                containerColor =
+                                    MaterialTheme.colorScheme.surface
                             ),
 
                             elevation = CardDefaults.cardElevation(
@@ -174,40 +192,63 @@ fun SearchPage(
 
             } else {
 
-                // ---------------------------------------------------------
-                // SHOW RESULTS ONLY AFTER SEARCH/CATEGORY SELECTION
-                // ---------------------------------------------------------
+                // SHOW LOADING, ERRORS OR SEARCH RESULTS
+                when {
 
-                if (filteredQuestions.isEmpty()) {
+                    isSearching -> {
 
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-
-                        Text(
-                            text = "No matching questions found.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator()
+                        }
                     }
 
-                } else {
+                    searchError != null -> {
 
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                        contentPadding = PaddingValues(bottom = 16.dp)
-                    ) {
-
-                        items(
-                            filteredQuestions,
-                            key = { it.id }
-                        ) { question ->
-
-                            QuestionCard(
-                                question = question,
-                                onClick = onQuestionClick,
-                                onUpvoteClick = onUpvoteClick
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = searchError ?: "Search failed",
+                                color = MaterialTheme.colorScheme.error
                             )
+                        }
+                    }
+
+                    searchResults.isEmpty() -> {
+
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No matching questions found.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    else -> {
+
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                            contentPadding = PaddingValues(bottom = 16.dp)
+                        ) {
+
+                            items(
+                                items = searchResults,
+                                key = { it.id }
+                            ) { question ->
+
+                                QuestionCard(
+                                    question = question,
+                                    onClick = onQuestionClick,
+                                    onUpvoteClick = onUpvoteClick
+                                )
+                            }
                         }
                     }
                 }
@@ -216,11 +257,7 @@ fun SearchPage(
     }
 }
 
-
-// ---------------------------------------------------------------------------
 // PREVIEW
-// ---------------------------------------------------------------------------
-
 @Preview(showBackground = true)
 @Composable
 fun SearchPagePreview() {
