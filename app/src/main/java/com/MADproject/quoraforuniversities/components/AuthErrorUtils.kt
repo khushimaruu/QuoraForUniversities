@@ -74,3 +74,12 @@ fun formatAuthErrorMessage(throwable: Throwable?, fallback: String): String {
         else -> fallback
     }
 }
+
+/**
+ * Validates that the email belongs to an educational institution (.edu, .ac.in, etc.)
+ */
+fun isCollegeEmail(email: String): Boolean {
+    val trimmed = email.trim().lowercase()
+    val collegeRegex = Regex("^[a-z0-9._%+-]+@[a-z0-9.-]+\\.(edu|ac\\.[a-z]{2,}|edu\\.[a-z]{2,})$")
+    return collegeRegex.matches(trimmed)
+}

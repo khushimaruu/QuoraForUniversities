@@ -13,8 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
@@ -52,8 +51,6 @@ data class UserPost(
 fun ProfileScreen(
     authRepository: AuthRepository = remember { AuthRepository() },
     profileRepository: ProfileRepository = remember { ProfileRepository() },
-    savedCount: Int = 0,
-    onSavedPostsClick: () -> Unit = {},
     onLogOutClick: () -> Unit = {},
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
 ) {
@@ -128,9 +125,7 @@ fun ProfileScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .padding(paddingValues)
-                .navigationBarsPadding()
-                .imePadding(),
+                .padding(paddingValues),
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -253,58 +248,6 @@ fun ProfileScreen(
                         color = MaterialTheme.colorScheme.onSurface,
                         lineHeight = 21.sp
                     )
-                }
-
-                Spacer(modifier = Modifier.height(15.dp))
-
-                // ---------------- SAVED POSTS CARD ----------------
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSavedPostsClick() },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Bookmark,
-                                contentDescription = "Saved Posts",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "Saved Posts",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (savedCount > 0) {
-                                Text(
-                                    text = "$savedCount",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                            }
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = "Open",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))

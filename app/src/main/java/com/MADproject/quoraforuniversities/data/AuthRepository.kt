@@ -1,14 +1,12 @@
 package com.MADproject.quoraforuniversities.data
 
-import android.content.Context
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.postgrest.from
 
-class AuthRepository(context: Context? = null) {
+class AuthRepository {
 
     private val auth = SupabaseClient.client.auth
-    private val prefs = context?.applicationContext?.getSharedPreferences("campus_auth_prefs", Context.MODE_PRIVATE)
 
     suspend fun signUp(
         emailVal: String,
@@ -21,10 +19,7 @@ class AuthRepository(context: Context? = null) {
                 email = emailVal
                 password = passwordVal
             }
-            val user = auth.currentUserOrNull()
-            val userId = user?.id
-            val userEmail = user?.email.orEmpty().ifBlank { emailVal }
-
+            val userId = auth.currentUserOrNull()?.id
             if (userId != null) {
                 val profile = ProfileDto(
                     id = userId,
@@ -34,9 +29,6 @@ class AuthRepository(context: Context? = null) {
                 runCatching {
                     SupabaseClient.client.from("profiles").upsert(profile)
                 }
-                saveSession(userId, userEmail)
-            } else {
-                saveSession("local_user", emailVal)
             }
         }
     }
@@ -47,12 +39,12 @@ class AuthRepository(context: Context? = null) {
                 email = emailVal
                 password = passwordVal
             }
+            // Ensure profile exists on sign in as well
             val user = auth.currentUserOrNull()
             val userId = user?.id
-            val userEmail = user?.email.orEmpty().ifBlank { emailVal }
-
             if (userId != null) {
-                val username = userEmail.substringBefore("@").ifBlank { "student" }
+                val email = user.email.orEmpty()
+                val username = email.substringBefore("@").ifBlank { "student" }
                 val profile = ProfileDto(
                     id = userId,
                     username = username,
@@ -61,42 +53,25 @@ class AuthRepository(context: Context? = null) {
                 runCatching {
                     SupabaseClient.client.from("profiles").upsert(profile)
                 }
-                saveSession(userId, userEmail)
-            } else {
-                saveSession("local_user", emailVal)
             }
         }
     }
 
     suspend fun signOut(): Result<Unit> {
         return runCatching {
-            runCatching { auth.signOut() }
-            clearSession()
+            auth.signOut()
         }
     }
 
-    private fun saveSession(userId: String, email: String) {
-        prefs?.edit()
-            ?.putBoolean("is_logged_in", true)
-            ?.putString("user_id", userId)
-            ?.putString("user_email", email)
-            ?.apply()
-    }
-
-    private fun clearSession() {
-        prefs?.edit()?.clear()?.apply()
-    }
-
     fun getCurrentUserId(): String? {
-        return auth.currentUserOrNull()?.id ?: prefs?.getString("user_id", null)
+        return auth.currentUserOrNull()?.id
     }
 
     fun getCurrentUserEmail(): String? {
-        return auth.currentUserOrNull()?.email ?: prefs?.getString("user_email", null)
+        return auth.currentUserOrNull()?.email
     }
 
     fun isLoggedIn(): Boolean {
-        if (auth.currentSessionOrNull() != null) return true
-        return prefs?.getBoolean("is_logged_in", false) == true
+        return auth.currentSessionOrNull() != null
     }
 }

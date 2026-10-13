@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.MADproject.quoraforuniversities.components.ErrorBanner
 import com.MADproject.quoraforuniversities.components.formatAuthErrorMessage
+import com.MADproject.quoraforuniversities.components.isCollegeEmail
 import com.MADproject.quoraforuniversities.data.AuthRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 import kotlinx.coroutines.launch
@@ -180,7 +181,7 @@ fun SignUpPage(
                         errorMessage = null
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("University Email") },
+                    label = { Text("College Email (.edu or .ac.in)") },
                     placeholder = { Text("student@university.edu") },
                     leadingIcon = {
                         Icon(
@@ -287,36 +288,44 @@ fun SignUpPage(
                 Button(
                     onClick = {
                         val trimmedName = fullName.trim()
+                        val trimmedUniversity = universityName.trim()
                         val trimmedEmail = email.trim()
                         val trimmedPassword = password.trim()
                         val trimmedConfirmPassword = confirmPassword.trim()
 
-                        if (trimmedName.isBlank() || trimmedEmail.isBlank() || trimmedPassword.isBlank()) {
-                            errorMessage = "Please fill in all required fields."
-                        } else if (!trimmedEmail.contains("@") || !trimmedEmail.contains(".")) {
-                            errorMessage = "Please enter a valid university email address."
-                        } else if (trimmedPassword != trimmedConfirmPassword) {
-                            errorMessage = "Passwords do not match."
-                        } else if (trimmedPassword.length < 6) {
-                            errorMessage = "Password must be at least 6 characters long."
-                        } else {
-                            isLoading = true
-                            errorMessage = null
-                            scope.launch {
-                                val result = authRepository.signUp(
-                                    emailVal = trimmedEmail,
-                                    passwordVal = trimmedPassword,
-                                    nameVal = trimmedName,
-                                    usernameVal = trimmedEmail.substringBefore("@")
-                                )
-                                isLoading = false
-                                if (result.isSuccess) {
-                                    onSignUpSuccess()
-                                } else {
-                                    errorMessage = formatAuthErrorMessage(
-                                        result.exceptionOrNull(),
-                                        "Sign up failed. Please check your details and try again."
+                        when {
+                            trimmedName.isBlank() || trimmedUniversity.isBlank() || trimmedEmail.isBlank() || trimmedPassword.isBlank() -> {
+                                errorMessage = "Please fill in all required fields."
+                            }
+                            !isCollegeEmail(trimmedEmail) -> {
+                                errorMessage = "Please enter a valid college email address (ending in .edu or .ac.in)."
+                            }
+                            trimmedPassword.length < 6 -> {
+                                errorMessage = "Password must be at least 6 characters long."
+                            }
+                            trimmedPassword != trimmedConfirmPassword -> {
+                                errorMessage = "Passwords do not match."
+                            }
+                            else -> {
+                                isLoading = true
+                                errorMessage = null
+                                scope.launch {
+                                    val result = authRepository.signUp(
+                                        emailVal = trimmedEmail,
+                                        passwordVal = trimmedPassword,
+                                        fullNameVal = trimmedName,
+                                        collegeVal = trimmedUniversity,
+                                        bioVal = null
                                     )
+                                    isLoading = false
+                                    if (result.isSuccess) {
+                                        onSignUpSuccess()
+                                    } else {
+                                        errorMessage = formatAuthErrorMessage(
+                                            result.exceptionOrNull(),
+                                            "Sign up failed. Please check your details and try again."
+                                        )
+                                    }
                                 }
                             }
                         }
