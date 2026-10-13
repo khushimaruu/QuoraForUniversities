@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun CampusQnAApp(
     context: android.content.Context = LocalContext.current,
-    authRepository: AuthRepository = remember { AuthRepository(context) },
+    authRepository: AuthRepository = remember { AuthRepository() },
     postRepository: PostRepository = remember { PostRepository() },
     profileRepository: ProfileRepository = remember { ProfileRepository() }
 ) {

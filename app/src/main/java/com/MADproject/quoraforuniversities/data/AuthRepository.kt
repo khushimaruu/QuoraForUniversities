@@ -11,9 +11,14 @@ class AuthRepository {
     suspend fun signUp(
         emailVal: String,
         passwordVal: String,
-        nameVal: String,
-        usernameVal: String
+        nameVal: String = "",
+        usernameVal: String = "",
+        fullNameVal: String = nameVal,
+        collegeVal: String? = null,
+        bioVal: String? = null
     ): Result<Unit> {
+        val resolvedName = fullNameVal.ifBlank { nameVal.ifBlank { "Student" } }
+        val resolvedUsername = usernameVal.ifBlank { emailVal.substringBefore("@").ifBlank { "student" } }
         return runCatching {
             auth.signUpWith(Email) {
                 email = emailVal
@@ -23,8 +28,9 @@ class AuthRepository {
             if (userId != null) {
                 val profile = ProfileDto(
                     id = userId,
-                    username = usernameVal,
-                    name = nameVal
+                    username = resolvedUsername,
+                    name = resolvedName,
+                    bio = bioVal
                 )
                 runCatching {
                     SupabaseClient.client.from("profiles").upsert(profile)
