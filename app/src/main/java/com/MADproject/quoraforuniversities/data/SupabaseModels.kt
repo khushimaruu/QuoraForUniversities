@@ -53,10 +53,21 @@ data class ProfileDto(
 data class ReplyDto(
     val id: String? = null,
     @SerialName("user_id") val userId: String? = null,
-    @SerialName("post_id") val postId: String,
-    val content: String,
+    @SerialName("post_id") val postId: String = "",
+    val content: String = "",
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null
+)
+
+@Serializable
+data class ReplyWithProfileDto(
+    val id: String? = null,
+    @SerialName("user_id") val userId: String? = null,
+    @SerialName("post_id") val postId: String = "",
+    val content: String = "",
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+    val profiles: ProfileDto? = null
 )
 
 @Serializable
@@ -138,6 +149,18 @@ fun ReplyDto.toUiModel(
     return ReplyUiModel(
         id = id ?: "",
         authorName = authorName,
+        body = content,
+        voteCount = voteCount
+    )
+}
+
+fun ReplyWithProfileDto.toUiModel(
+    voteCount: Int = 0
+): ReplyUiModel {
+    val resolvedAuthorName = profiles?.name ?: profiles?.username ?: "Student"
+    return ReplyUiModel(
+        id = id ?: "",
+        authorName = resolvedAuthorName,
         body = content,
         voteCount = voteCount
     )

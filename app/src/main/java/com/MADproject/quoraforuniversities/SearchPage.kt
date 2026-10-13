@@ -109,6 +109,8 @@ fun SearchPage(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
                 .padding(innerPadding)
+                .navigationBarsPadding()
+                .imePadding()
                 .padding(horizontal = 16.dp)
         ) {
 

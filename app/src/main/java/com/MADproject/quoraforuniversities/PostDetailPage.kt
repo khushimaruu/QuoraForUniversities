@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.*
@@ -22,7 +23,9 @@ import com.MADproject.quoraforuniversities.components.AppHeader
 import com.MADproject.quoraforuniversities.components.BottomNavBar
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
+import com.MADproject.quoraforuniversities.data.GeminiService
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
+import kotlinx.coroutines.launch
 
 data class ReplyUiModel(
     val id: String,
@@ -35,15 +38,17 @@ data class ReplyUiModel(
 fun PostDetailPage(
     question: QuestionUiModel,
     replies: List<ReplyUiModel>,
+    geminiService: GeminiService = remember { GeminiService() },
     onBackClick: () -> Unit = {},
     onUpvoteClick: () -> Unit = {},
-    onSubmitReply: (String) -> Unit = {},
+    onSubmitReply: (text: String, onResult: (String?) -> Unit) -> Unit = { _, _ -> },
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
 ) {
 
-    var replyText by remember {
-        mutableStateOf("")
-    }
+    var replyText by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var replyError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -229,52 +234,105 @@ fun PostDetailPage(
             // WRITE ANSWER
 
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .imePadding(),
                 tonalElevation = 3.dp
             ) {
-
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(12.dp)
                 ) {
+                    replyError?.let { msg ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(bottom = 8.dp, start = 4.dp, end = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ErrorOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = msg,
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
 
-                    OutlinedTextField(
-                        value = replyText,
-                        onValueChange = {
-                            replyText = it
-                        },
-                        modifier = Modifier.weight(1f),
-                        placeholder = {
-                            Text("Write an answer...")
-                        },
-                        maxLines = 3,
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = replyText,
+                            onValueChange = {
+                                replyText = it
+                                replyError = null
+                            },
+                            enabled = !isSubmitting,
+                            modifier = Modifier.weight(1f),
+                            placeholder = {
+                                Text("Write an answer...")
+                            },
+                            maxLines = 3,
+                            shape = RoundedCornerShape(12.dp)
+                        )
 
-                    Spacer(
-                        modifier = Modifier.width(8.dp)
-                    )
+                        Spacer(modifier = Modifier.width(8.dp))
 
-                    IconButton(
-                        onClick = {
+                        IconButton(
+                            enabled = replyText.isNotBlank() && !isSubmitting,
+                            onClick = {
+                                if (replyText.isNotBlank() && !isSubmitting) {
+                                    isSubmitting = true
+                                    replyError = null
+                                    scope.launch {
+                                        val moderationResult = geminiService.checkReplyModeration(replyText.trim())
+                                        if (moderationResult.isSuccess) {
+                                            val mod = moderationResult.getOrNull()
+                                            if (mod != null && !mod.isAllowed) {
+                                                isSubmitting = false
+                                                replyError = mod.reason ?: "Reply flagged by AI moderation."
+                                                return@launch
+                                            }
+                                        } else {
+                                            isSubmitting = false
+                                            replyError = moderationResult.exceptionOrNull()?.localizedMessage
+                                                ?: "AI content moderation check failed."
+                                            return@launch
+                                        }
 
-                            if (replyText.isNotBlank()) {
-
-                                onSubmitReply(
-                                    replyText
+                                        onSubmitReply(replyText.trim()) { error ->
+                                            isSubmitting = false
+                                            if (error != null) {
+                                                replyError = error
+                                            } else {
+                                                replyText = ""
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        ) {
+                            if (isSubmitting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp
                                 )
-
-                                replyText = ""
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Send,
+                                    contentDescription = "Send"
+                                )
                             }
                         }
-                    ) {
-
-                        Icon(
-                            imageVector = Icons.Default.Send,
-                            contentDescription = "Send"
-                        )
                     }
                 }
             }

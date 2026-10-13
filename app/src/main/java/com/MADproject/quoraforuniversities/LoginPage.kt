@@ -81,6 +81,8 @@ fun LoginPage(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
+                    .navigationBarsPadding()
+                    .imePadding()
                     .padding(horizontal = 28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {

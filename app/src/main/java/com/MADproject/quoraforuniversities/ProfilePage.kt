@@ -125,7 +125,9 @@ fun ProfileScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .padding(paddingValues),
+                .padding(paddingValues)
+                .navigationBarsPadding()
+                .imePadding(),
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {

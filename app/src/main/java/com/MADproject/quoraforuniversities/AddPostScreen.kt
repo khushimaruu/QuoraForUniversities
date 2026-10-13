@@ -61,25 +61,7 @@ fun AddPostScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.statusBars)
-            ) {
-                AppHeader(subtitle = "New Post")
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = 12.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White
-                    )
-                }
-            }
+            AppHeader(subtitle = "New Post", onBackClick = onBack)
         }
     ) { padding ->
         Column(
@@ -87,6 +69,8 @@ fun AddPostScreen(
                 .padding(padding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .imePadding()
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
