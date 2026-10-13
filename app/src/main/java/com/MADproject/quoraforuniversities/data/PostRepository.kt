@@ -202,4 +202,54 @@ class PostRepository {
             SupabaseClient.client.from("replies").insert(dto)
         }
     }
+
+    // BOOKMARK / SAVE POST
+    suspend fun bookmarkPost(postId: String): Result<Unit> {
+        return runCatching {
+            val currentUser = SupabaseClient.client.auth.currentUserOrNull()
+            val currentUserId = currentUser?.id ?: error("User not logged in")
+            val dto = CreateBookmarkDto(userId = currentUserId, postId = postId)
+            SupabaseClient.client.from("bookmarks").insert(dto)
+        }
+    }
+
+    // UNBOOKMARK / REMOVE SAVED POST
+    suspend fun unbookmarkPost(postId: String): Result<Unit> {
+        return runCatching {
+            val currentUser = SupabaseClient.client.auth.currentUserOrNull()
+            val currentUserId = currentUser?.id ?: error("User not logged in")
+            SupabaseClient.client.from("bookmarks").delete {
+                filter {
+                    eq("user_id", currentUserId)
+                    eq("post_id", postId)
+                }
+            }
+        }
+    }
+
+    // FETCH SAVED POST IDS FOR CURRENT USER
+    suspend fun getSavedPostIds(): Set<String> {
+        return runCatching {
+            val currentUser = SupabaseClient.client.auth.currentUserOrNull()
+            val currentUserId = currentUser?.id ?: return emptySet()
+            val bookmarks = SupabaseClient.client.from("bookmarks")
+                .select {
+                    filter {
+                        eq("user_id", currentUserId)
+                    }
+                }
+                .decodeList<BookmarkDto>()
+            bookmarks.mapNotNull { it.postId }.toSet()
+        }.getOrDefault(emptySet())
+    }
+
+    // FETCH SAVED POSTS
+    suspend fun getSavedPosts(): Result<List<QuestionUiModel>> {
+        return runCatching {
+            val savedIds = getSavedPostIds()
+            if (savedIds.isEmpty()) return Result.success(emptyList())
+            val allPosts = getPosts().getOrDefault(emptyList())
+            allPosts.filter { it.id in savedIds }
+        }
+    }
 }

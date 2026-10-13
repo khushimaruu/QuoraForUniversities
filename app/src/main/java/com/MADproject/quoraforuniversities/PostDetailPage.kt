@@ -7,9 +7,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,8 +41,10 @@ fun PostDetailPage(
     question: QuestionUiModel,
     replies: List<ReplyUiModel>,
     geminiService: GeminiService = remember { GeminiService() },
+    isBookmarked: Boolean = false,
     onBackClick: () -> Unit = {},
     onUpvoteClick: () -> Unit = {},
+    onBookmarkClick: ((String) -> Unit)? = null,
     onSubmitReply: (text: String, onResult: (String?) -> Unit) -> Unit = { _, _ -> },
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
 ) {
@@ -172,36 +176,53 @@ fun PostDetailPage(
                                 modifier = Modifier.height(10.dp)
                             )
 
-                            // VOTE / ANSWER ROW
+                            // VOTE / ANSWER / SAVE ROW
 
                             Row(
-                                verticalAlignment = Alignment.CenterVertically
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
 
-                                IconButton(
-                                    onClick = onUpvoteClick
-                                ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
 
-                                    Icon(
-                                        imageVector = Icons.Default.ThumbUp,
-                                        contentDescription = "Upvote"
+                                    IconButton(
+                                        onClick = onUpvoteClick
+                                    ) {
+
+                                        Icon(
+                                            imageVector = Icons.Default.ThumbUp,
+                                            contentDescription = "Upvote"
+                                        )
+                                    }
+
+                                    Text(
+                                        text = question.voteCount.toString(),
+                                        fontSize = 14.sp
+                                    )
+
+                                    Spacer(
+                                        modifier = Modifier.width(20.dp)
+                                    )
+
+                                    Text(
+                                        text = "${replies.size} Answers",
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
 
-                                Text(
-                                    text = question.voteCount.toString(),
-                                    fontSize = 14.sp
-                                )
-
-                                Spacer(
-                                    modifier = Modifier.width(20.dp)
-                                )
-
-                                Text(
-                                    text = "${replies.size} Answers",
-                                    fontSize = 14.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                if (onBookmarkClick != null) {
+                                    IconButton(
+                                        onClick = { onBookmarkClick(question.id) }
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                                            contentDescription = if (isBookmarked) "Unsave" else "Save",
+                                            tint = if (isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

@@ -11,10 +11,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -79,6 +79,44 @@ fun CampusQnAApp(
         mutableStateOf<List<ReplyUiModel>>(emptyList())
     }
 
+    var savedPostIds by remember {
+        mutableStateOf<Set<String>>(emptySet())
+    }
+
+    var savedQuestions by remember {
+        mutableStateOf<List<QuestionUiModel>>(emptyList())
+    }
+
+    var isSavedLoading by remember {
+        mutableStateOf(false)
+    }
+
+    fun refreshSavedPosts() {
+        scope.launch {
+            if (savedQuestions.isEmpty()) {
+                isSavedLoading = true
+            }
+            val ids = postRepository.getSavedPostIds()
+            savedPostIds = ids
+            val res = postRepository.getSavedPosts()
+            isSavedLoading = false
+            if (res.isSuccess) {
+                savedQuestions = res.getOrDefault(emptyList())
+            }
+        }
+    }
+
+    fun toggleBookmark(postId: String) {
+        scope.launch {
+            if (savedPostIds.contains(postId)) {
+                postRepository.unbookmarkPost(postId)
+            } else {
+                postRepository.bookmarkPost(postId)
+            }
+            refreshSavedPosts()
+        }
+    }
+
     fun refreshQuestions() {
         scope.launch {
             if (questions.isEmpty()) {
@@ -110,6 +148,9 @@ fun CampusQnAApp(
 
     LaunchedEffect(Unit) {
         refreshQuestions()
+        if (authRepository.isLoggedIn()) {
+            refreshSavedPosts()
+        }
         delay(1200)
         currentScreen = if (authRepository.isLoggedIn()) "home" else "landing"
     }
@@ -155,6 +196,7 @@ fun CampusQnAApp(
                 },
                 onLoginSuccess = {
                     refreshQuestions()
+                    refreshSavedPosts()
                     currentScreen = "home"
                 },
                 onNavigateToSignUp = {
@@ -171,6 +213,7 @@ fun CampusQnAApp(
                 },
                 onSignUpSuccess = {
                     refreshQuestions()
+                    refreshSavedPosts()
                     currentScreen = "home"
                 },
                 onNavigateToLogin = {
@@ -183,6 +226,7 @@ fun CampusQnAApp(
             HomeScreen(
                 questions = questions,
                 isLoading = isFeedLoading,
+                savedPostIds = savedPostIds,
                 onQuestionClick = { questionId ->
                     selectedQuestion = questions.find { it.id == questionId }
                     refreshReplies(questionId)
@@ -193,6 +237,9 @@ fun CampusQnAApp(
                         postRepository.votePost(questionId)
                         refreshQuestions()
                     }
+                },
+                onBookmarkClick = { questionId ->
+                    toggleBookmark(questionId)
                 },
                 onNavDestinationSelected = { destination ->
                     when (destination) {
@@ -208,6 +255,7 @@ fun CampusQnAApp(
         "search" -> {
             SearchPage(
                 questions = questions,
+                savedPostIds = savedPostIds,
                 onQuestionClick = { questionId ->
                     selectedQuestion = questions.find { it.id == questionId }
                     refreshReplies(questionId)
@@ -218,6 +266,9 @@ fun CampusQnAApp(
                         postRepository.votePost(questionId)
                         refreshQuestions()
                     }
+                },
+                onBookmarkClick = { questionId ->
+                    toggleBookmark(questionId)
                 },
                 onNavDestinationSelected = { destination ->
                     when (destination) {
@@ -235,6 +286,7 @@ fun CampusQnAApp(
                 PostDetailPage(
                     question = question,
                     replies = replies,
+                    isBookmarked = savedPostIds.contains(question.id),
                     onBackClick = {
                         currentScreen = "home"
                     },
@@ -243,6 +295,9 @@ fun CampusQnAApp(
                             postRepository.votePost(question.id)
                             refreshQuestions()
                         }
+                    },
+                    onBookmarkClick = { questionId ->
+                        toggleBookmark(questionId)
                     },
                     onSubmitReply = { text, onResult ->
                         scope.launch {
@@ -275,8 +330,49 @@ fun CampusQnAApp(
             ProfileScreen(
                 authRepository = authRepository,
                 profileRepository = profileRepository,
+                savedCount = savedPostIds.size,
+                onSavedPostsClick = {
+                    refreshSavedPosts()
+                    currentScreen = "saved_posts"
+                },
                 onLogOutClick = {
                     currentScreen = "landing"
+                },
+                onNavDestinationSelected = { destination ->
+                    when (destination) {
+                        BottomNavDestination.HOME -> currentScreen = "home"
+                        BottomNavDestination.SEARCH -> currentScreen = "search"
+                        BottomNavDestination.PROFILE -> currentScreen = "profile"
+                        BottomNavDestination.ADD_POST -> currentScreen = "add_post"
+                    }
+                }
+            )
+        }
+
+        "saved_posts" -> {
+            SavedPostsPage(
+                savedQuestions = savedQuestions,
+                savedPostIds = savedPostIds,
+                isLoading = isSavedLoading,
+                onQuestionClick = { questionId ->
+                    selectedQuestion = questions.find { it.id == questionId } ?: savedQuestions.find { it.id == questionId }
+                    if (selectedQuestion != null) {
+                        refreshReplies(questionId)
+                        currentScreen = "post"
+                    }
+                },
+                onUpvoteClick = { questionId ->
+                    scope.launch {
+                        postRepository.votePost(questionId)
+                        refreshQuestions()
+                        refreshSavedPosts()
+                    }
+                },
+                onBookmarkClick = { questionId ->
+                    toggleBookmark(questionId)
+                },
+                onBackClick = {
+                    currentScreen = "profile"
                 },
                 onNavDestinationSelected = { destination ->
                     when (destination) {

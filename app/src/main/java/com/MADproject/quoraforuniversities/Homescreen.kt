@@ -1,6 +1,5 @@
 package com.MADproject.quoraforuniversities
 
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,20 +20,14 @@ import com.MADproject.quoraforuniversities.components.QuestionCard
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 
-/**
- * Home feed. Header and bottom nav are shared components — reuse them as-is
- * on Search, Ask, and Profile so the shell stays consistent across screens.
- *
- * Data is passed in, not fetched here. Wire `questions` to
- * `viewModel.questions.collectAsState()` once your Supabase repository
- * is ready; nothing else in this file needs to change.
- */
 @Composable
 fun HomeScreen(
     questions: List<QuestionUiModel>,
     isLoading: Boolean = false,
+    savedPostIds: Set<String> = emptySet(),
     onQuestionClick: (String) -> Unit = {},
     onUpvoteClick: (String) -> Unit = {},
+    onBookmarkClick: ((String) -> Unit)? = null,
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {},
 ) {
     Scaffold(
@@ -76,7 +69,9 @@ fun HomeScreen(
                             QuestionCard(
                                 question = question,
                                 onClick = onQuestionClick,
-                                onUpvoteClick = onUpvoteClick
+                                onUpvoteClick = onUpvoteClick,
+                                onBookmarkClick = onBookmarkClick,
+                                isBookmarked = savedPostIds.contains(question.id)
                             )
                         }
                     }

@@ -95,6 +95,20 @@ data class CreateVoteDto(
     @SerialName("vote_type") val voteType: String = "upvote"
 )
 
+@Serializable
+data class BookmarkDto(
+    val id: String? = null,
+    @SerialName("user_id") val userId: String? = null,
+    @SerialName("post_id") val postId: String? = null,
+    @SerialName("created_at") val createdAt: String? = null
+)
+
+@Serializable
+data class CreateBookmarkDto(
+    @SerialName("user_id") val userId: String,
+    @SerialName("post_id") val postId: String
+)
+
 fun PostDto.toUiModel(
     authorName: String = "Anonymous",
     voteCount: Int = 0,
