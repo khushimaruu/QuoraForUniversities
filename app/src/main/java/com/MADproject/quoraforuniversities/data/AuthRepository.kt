@@ -11,40 +11,24 @@ class AuthRepository {
     suspend fun signUp(
         emailVal: String,
         passwordVal: String,
-        fullNameVal: String,
-        collegeVal: String,
-        bioVal: String? = null
+        nameVal: String,
+        usernameVal: String
     ): Result<Unit> {
         return runCatching {
-            // 1. Authenticate with Supabase Auth
             auth.signUpWith(Email) {
                 email = emailVal
                 password = passwordVal
             }
-
             val userId = auth.currentUserOrNull()?.id
-                ?: error("Account created, but could not retrieve user ID.")
-
-            // 2. Parse First Name and Last Name
-            val nameParts = fullNameVal.trim().split(" ", limit = 2)
-            val firstName = nameParts.getOrNull(0) ?: fullNameVal
-            val lastName = nameParts.getOrNull(1)
-
-            // Default bio includes the college if user left bio blank
-            val finalBio = if (!bioVal.isNullOrBlank()) bioVal.trim() else "Student at ${collegeVal.trim()}"
-            val usernameVal = emailVal.substringBefore("@").replace(".", "_")
-
-            val profile = ProfileDto(
-                id = userId,
-                username = usernameVal,
-                name = firstName,
-                lastName = lastName,
-                bio = finalBio
-            )
-
-            // 3. Upsert into public.profiles table
-            runCatching {
-                SupabaseClient.client.from("profiles").upsert(profile)
+            if (userId != null) {
+                val profile = ProfileDto(
+                    id = userId,
+                    username = usernameVal,
+                    name = nameVal
+                )
+                runCatching {
+                    SupabaseClient.client.from("profiles").upsert(profile)
+                }
             }
         }
     }
@@ -55,6 +39,21 @@ class AuthRepository {
                 email = emailVal
                 password = passwordVal
             }
+            // Ensure profile exists on sign in as well
+            val user = auth.currentUserOrNull()
+            val userId = user?.id
+            if (userId != null) {
+                val email = user.email.orEmpty()
+                val username = email.substringBefore("@").ifBlank { "student" }
+                val profile = ProfileDto(
+                    id = userId,
+                    username = username,
+                    name = username.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+                )
+                runCatching {
+                    SupabaseClient.client.from("profiles").upsert(profile)
+                }
+            }
         }
     }
 
@@ -64,9 +63,15 @@ class AuthRepository {
         }
     }
 
-    fun getCurrentUserId(): String? = auth.currentUserOrNull()?.id
+    fun getCurrentUserId(): String? {
+        return auth.currentUserOrNull()?.id
+    }
 
-    fun getCurrentUserEmail(): String? = auth.currentUserOrNull()?.email
+    fun getCurrentUserEmail(): String? {
+        return auth.currentUserOrNull()?.email
+    }
 
-    fun isLoggedIn(): Boolean = auth.currentSessionOrNull() != null
+    fun isLoggedIn(): Boolean {
+        return auth.currentSessionOrNull() != null
+    }
 }

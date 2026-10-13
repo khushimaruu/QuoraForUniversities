@@ -2,14 +2,18 @@ package com.MADproject.quoraforuniversities.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -28,16 +32,14 @@ import com.MADproject.quoraforuniversities.ui.theme.HeaderGradientStart
 /**
  * App-branded header, reused across Home, Search, Ask, and Profile.
  * Two-tone wordmark ("Campus" in white, "Circle" in the accent color) on a
- * three-stop diagonal gradient, with a small mark icon for a less generic,
- * more "app-like" feel than plain centered text.
- *
- * Pass [subtitle] per screen for context (e.g. "Ask a Question"); leave it
- * null for just the wordmark.
+ * three-stop diagonal gradient, with the concentric circle badge icon for
+ * standardization across the entire app. Optional [onBackClick] adds a back button.
  */
 @Composable
 fun AppHeader(
     modifier: Modifier = Modifier,
-    subtitle: String? = null
+    subtitle: String? = null,
+    onBackClick: (() -> Unit)? = null
 ) {
     Box(
         modifier = modifier
@@ -50,16 +52,46 @@ fun AppHeader(
             .padding(top = 52.dp, bottom = 24.dp, start = 16.dp, end = 16.dp),
         contentAlignment = Alignment.Center
     ) {
+        if (onBackClick != null) {
+            IconButton(
+                onClick = onBackClick,
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.White
+                )
+            }
+        }
+
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Filled.Forum,
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.95f),
+                Box(
                     modifier = Modifier
-                        .padding(end = 8.dp)
-                        .size(22.dp)
-                )
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(Color.White),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Forum,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     text = buildAnnotatedString {
                         withStyle(SpanStyle(color = Color.White)) { append("Campus") }

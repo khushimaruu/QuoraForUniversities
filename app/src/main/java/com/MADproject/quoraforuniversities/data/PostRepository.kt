@@ -10,9 +10,6 @@ import kotlinx.coroutines.CancellationException
 
 class PostRepository {
 
-    private val repliesMap =
-        mutableMapOf<String, MutableList<ReplyUiModel>>()
-
     // FETCH ALL POSTS
     suspend fun getPosts(): Result<List<QuestionUiModel>> {
         return runCatching {
@@ -20,7 +17,19 @@ class PostRepository {
                 .select(Columns.raw("*, profiles(*)"))
                 .decodeList<PostWithProfileDto>()
 
-            dbPosts.map { it.toUiModel() }
+            val allReplies = runCatching {
+                SupabaseClient.client.from("replies")
+                    .select(Columns.raw("id, post_id"))
+                    .decodeList<ReplyDto>()
+            }.getOrDefault(emptyList())
+
+            val replyCounts = allReplies.groupBy { it.postId }.mapValues { it.value.size }
+
+            dbPosts.map { dto ->
+                dto.toUiModel(
+                    answerCount = replyCounts[dto.id] ?: 0
+                )
+            }
         }.recover {
             emptyList()
         }
@@ -51,8 +60,20 @@ class PostRepository {
                 }
                 .decodeList<PostWithProfileDto>()
 
+            val allReplies = runCatching {
+                SupabaseClient.client.from("replies")
+                    .select(Columns.raw("id, post_id"))
+                    .decodeList<ReplyDto>()
+            }.getOrDefault(emptyList())
+
+            val replyCounts = allReplies.groupBy { it.postId }.mapValues { it.value.size }
+
             Result.success(
-                dbPosts.map { it.toUiModel() }
+                dbPosts.map { dto ->
+                    dto.toUiModel(
+                        answerCount = replyCounts[dto.id] ?: 0
+                    )
+                }
             )
 
         } catch (e: CancellationException) {
@@ -121,10 +142,28 @@ class PostRepository {
     suspend fun getReplies(
         postId: String
     ): Result<List<ReplyUiModel>> {
+        return runCatching {
+            val dbReplies = SupabaseClient.client.from("replies")
+                .select(Columns.raw("*, profiles(*)")) {
+                    filter {
+                        eq("post_id", postId)
+                    }
+                }
+                .decodeList<ReplyWithProfileDto>()
 
-        val list = repliesMap[postId] ?: emptyList()
-
-        return Result.success(list.toList())
+            dbReplies.map { it.toUiModel() }
+        }.recover {
+            runCatching {
+                val plainReplies = SupabaseClient.client.from("replies")
+                    .select {
+                        filter {
+                            eq("post_id", postId)
+                        }
+                    }
+                    .decodeList<ReplyDto>()
+                plainReplies.map { it.toUiModel("Student") }
+            }.getOrDefault(emptyList())
+        }
     }
 
     // CREATE REPLY
@@ -132,20 +171,85 @@ class PostRepository {
         postId: String,
         content: String
     ): Result<Unit> {
+        return runCatching {
+            val currentUser = SupabaseClient.client.auth.currentUserOrNull()
+            val currentUserId = currentUser?.id ?: error("User not logged in")
+            val email = currentUser.email.orEmpty()
+            val username = email.substringBefore("@").ifBlank { "student" }
 
-        val list = repliesMap.getOrPut(postId) {
-            mutableListOf()
+            val profileDto = ProfileDto(
+                id = currentUserId,
+                username = username,
+                name = username.replaceFirstChar {
+                    if (it.isLowerCase()) {
+                        it.titlecase()
+                    } else {
+                        it.toString()
+                    }
+                }
+            )
+
+            runCatching {
+                SupabaseClient.client.from("profiles").upsert(profileDto)
+            }
+
+            val dto = CreateReplyDto(
+                userId = currentUserId,
+                postId = postId,
+                content = content.trim()
+            )
+
+            SupabaseClient.client.from("replies").insert(dto)
         }
+    }
 
-        val newReply = ReplyUiModel(
-            id = System.currentTimeMillis().toString(),
-            authorName = "Student",
-            body = content,
-            voteCount = 0
-        )
+    // BOOKMARK / SAVE POST
+    suspend fun bookmarkPost(postId: String): Result<Unit> {
+        return runCatching {
+            val currentUser = SupabaseClient.client.auth.currentUserOrNull()
+            val currentUserId = currentUser?.id ?: error("User not logged in")
+            val dto = CreateBookmarkDto(userId = currentUserId, postId = postId)
+            SupabaseClient.client.from("bookmarks").insert(dto)
+        }
+    }
 
-        list.add(newReply)
+    // UNBOOKMARK / REMOVE SAVED POST
+    suspend fun unbookmarkPost(postId: String): Result<Unit> {
+        return runCatching {
+            val currentUser = SupabaseClient.client.auth.currentUserOrNull()
+            val currentUserId = currentUser?.id ?: error("User not logged in")
+            SupabaseClient.client.from("bookmarks").delete {
+                filter {
+                    eq("user_id", currentUserId)
+                    eq("post_id", postId)
+                }
+            }
+        }
+    }
 
-        return Result.success(Unit)
+    // FETCH SAVED POST IDS FOR CURRENT USER
+    suspend fun getSavedPostIds(): Set<String> {
+        return runCatching {
+            val currentUser = SupabaseClient.client.auth.currentUserOrNull()
+            val currentUserId = currentUser?.id ?: return emptySet()
+            val bookmarks = SupabaseClient.client.from("bookmarks")
+                .select {
+                    filter {
+                        eq("user_id", currentUserId)
+                    }
+                }
+                .decodeList<BookmarkDto>()
+            bookmarks.mapNotNull { it.postId }.toSet()
+        }.getOrDefault(emptySet())
+    }
+
+    // FETCH SAVED POSTS
+    suspend fun getSavedPosts(): Result<List<QuestionUiModel>> {
+        return runCatching {
+            val savedIds = getSavedPostIds()
+            if (savedIds.isEmpty()) return Result.success(emptyList())
+            val allPosts = getPosts().getOrDefault(emptyList())
+            allPosts.filter { it.id in savedIds }
+        }
     }
 }

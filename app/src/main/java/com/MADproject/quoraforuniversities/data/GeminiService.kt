@@ -30,46 +30,117 @@ class GeminiService {
 
     private val apiKey = GeminiConfig.GEMINI_API_KEY
 
+    private fun localContentCheck(text: String): ModerationResult {
+        val lower = text.lowercase()
+        val toxicTerms = listOf(
+            "idiot", "stupid", "dumb", "fuck", "shit", "bitch", "bastard", "asshole",
+            "mean", "rude", "ugly", "hate", "loser", "jerk", "trash", "shut up",
+            "useless", "nasty", "horrible", "disgusting", "die", "scam", "pathetic",
+            "gross", "creep", "freak", "clown", "scum"
+        )
+        val matched = toxicTerms.firstOrNull { lower.contains(it) }
+        if (matched != null) {
+            return ModerationResult(
+                isAllowed = false,
+                reason = "Content violates community guidelines: contains rude or inappropriate language ('$matched')."
+            )
+        }
+        return ModerationResult(isAllowed = true)
+    }
+
     suspend fun checkContentModeration(title: String, description: String): Result<ModerationResult> =
         withContext(Dispatchers.IO) {
             runCatching {
+                val combined = "$title $description".trim()
+                val localResult = localContentCheck(combined)
+                if (!localResult.isAllowed) {
+                    return@runCatching localResult
+                }
+
                 if (apiKey.isBlank() || apiKey == "YOUR_GEMINI_API_KEY_HERE") {
-                    // Fallback local moderation if API key is not set
-                    val combined = "$title $description".lowercase()
-                    val bannedWords = listOf("idiot", "stupid", "hate", "dumb", "fuck", "shit", "bitch", "bastard")
-                    val foundWord = bannedWords.firstOrNull { combined.contains(it) }
-                    if (foundWord != null) {
-                        return@runCatching ModerationResult(
-                            isAllowed = false,
-                            reason = "Contains inappropriate word: '$foundWord'"
-                        )
-                    }
-                    return@runCatching ModerationResult(isAllowed = true)
+                    return@runCatching localResult
                 }
 
                 val prompt = """
-                    You are a content moderation AI for a university campus Q&A application.
-                    Analyze the following post title and description for bad language, hate speech, profanity, toxicity, harassment, or inappropriate content.
-                    
+                    You are a strict, zero-tolerance content moderation AI for a university campus Q&A app.
+                    Your strict duty is to protect the community from ANY form of disrespect, toxicity, hostility, insults, rudeness, personal attacks, hate speech, profanity, or negative conduct.
+
+                    Analyze the following post title and description carefully:
                     Post Title: "$title"
                     Post Description: "$description"
-                    
-                    Instructions:
-                    If the post contains bad language, profanity, harassment, or inappropriate content, respond strictly with:
-                    FLAGGED: <Short clear reason for rejection>
-                    
-                    If the post is safe, appropriate, and clean, respond strictly with:
+
+                    Rulebook:
+                    1. Zero Tolerance for Insults & Rudeness: Any disrespect, insults, or rudeness (e.g., "you are mean", "you are rude", "shut up", "dumb", "loser") MUST be FLAGGED.
+                    2. Zero Tolerance for Hate Speech & Bias: Any attack or hostility based on race, gender, religion, ethnicity, orientation, or background MUST be FLAGGED.
+                    3. Zero Tolerance for Profanity & Harassment: Bad language, swearing, vulgarity, harassment, or toxic behavior MUST be FLAGGED.
+                    4. Constructive Discussion: Only polite, respectful, safe, and academic content is ALLOWED.
+
+                    OUTPUT REQUIREMENT:
+                    If the content violates ANY rule above, reply strictly in this format:
+                    FLAGGED: <Short clear explanation of the violation>
+
+                    If the content is clean, polite, respectful, and safe, reply strictly:
                     ALLOWED
                 """.trimIndent()
 
-                val responseText = callGeminiApi(prompt)
+                val responseText = callGeminiApi(prompt).trim()
 
-                if (responseText.trim().startsWith("FLAGGED:", ignoreCase = true)) {
-                    val reason = responseText.substringAfter("FLAGGED:").trim()
-                        .ifBlank { "Content violates community guidelines." }
+                if (responseText.contains("FLAGGED", ignoreCase = true)) {
+                    val reason = responseText.substringAfter("FLAGGED:")
+                        .trim()
+                        .ifBlank { "Content flagged as rude, toxic, or inappropriate by AI moderation." }
                     ModerationResult(isAllowed = false, reason = reason)
-                } else if (responseText.contains("FLAGGED", ignoreCase = true)) {
-                    ModerationResult(isAllowed = false, reason = "Content flagged as inappropriate by AI moderation.")
+                } else if (!responseText.startsWith("ALLOWED", ignoreCase = true)) {
+                    ModerationResult(isAllowed = false, reason = "Content flagged by community safety guidelines.")
+                } else {
+                    ModerationResult(isAllowed = true)
+                }
+            }
+        }
+
+    suspend fun checkReplyModeration(content: String): Result<ModerationResult> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val textToTest = content.trim()
+                val localResult = localContentCheck(textToTest)
+                if (!localResult.isAllowed) {
+                    return@runCatching localResult
+                }
+
+                if (apiKey.isBlank() || apiKey == "YOUR_GEMINI_API_KEY_HERE") {
+                    return@runCatching localResult
+                }
+
+                val prompt = """
+                    You are a strict, zero-tolerance content moderation AI for a university campus Q&A app.
+                    Your strict duty is to protect the community from ANY form of disrespect, toxicity, hostility, insults, rudeness, personal attacks, hate speech, profanity, or negative conduct.
+
+                    Analyze the following answer/reply content carefully:
+                    Reply Content: "$content"
+
+                    Rulebook:
+                    1. Zero Tolerance for Insults & Rudeness: Any disrespect, insults, or rudeness (e.g., "you are mean", "you are rude", "shut up", "dumb", "loser") MUST be FLAGGED.
+                    2. Zero Tolerance for Hate Speech & Bias: Any attack or hostility based on race, gender, religion, ethnicity, orientation, or background MUST be FLAGGED.
+                    3. Zero Tolerance for Profanity & Harassment: Bad language, swearing, vulgarity, harassment, or toxic behavior MUST be FLAGGED.
+                    4. Constructive Discussion: Only polite, respectful, safe, and academic content is ALLOWED.
+
+                    OUTPUT REQUIREMENT:
+                    If the content violates ANY rule above, reply strictly in this format:
+                    FLAGGED: <Short clear explanation of the violation>
+
+                    If the content is clean, polite, respectful, and safe, reply strictly:
+                    ALLOWED
+                """.trimIndent()
+
+                val responseText = callGeminiApi(prompt).trim()
+
+                if (responseText.contains("FLAGGED", ignoreCase = true)) {
+                    val reason = responseText.substringAfter("FLAGGED:")
+                        .trim()
+                        .ifBlank { "Reply flagged as rude, toxic, or inappropriate by AI moderation." }
+                    ModerationResult(isAllowed = false, reason = reason)
+                } else if (!responseText.startsWith("ALLOWED", ignoreCase = true)) {
+                    ModerationResult(isAllowed = false, reason = "Reply flagged by community safety guidelines.")
                 } else {
                     ModerationResult(isAllowed = true)
                 }

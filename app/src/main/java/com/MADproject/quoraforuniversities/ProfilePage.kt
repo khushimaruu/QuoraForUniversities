@@ -13,31 +13,40 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.MADproject.quoraforuniversities.components.AppHeader
-import com.MADproject.quoraforuniversities.components.BottomNavBar
-import com.MADproject.quoraforuniversities.components.BottomNavDestination
-import com.MADproject.quoraforuniversities.components.QuestionCard
-import com.MADproject.quoraforuniversities.components.QuestionUiModel
+import androidx.compose.ui.tooling.preview.Preview
 import com.MADproject.quoraforuniversities.data.AuthRepository
 import com.MADproject.quoraforuniversities.data.ProfileDto
 import com.MADproject.quoraforuniversities.data.ProfileRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
+import com.MADproject.quoraforuniversities.components.AppHeader
+import com.MADproject.quoraforuniversities.components.BottomNavBar
+import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import kotlinx.coroutines.launch
 
+data class UserPost(
+    val title: String,
+    val description: String,
+    val category: String,
+    val answers: Int,
+    val likes: Int
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     authRepository: AuthRepository = remember { AuthRepository() },
@@ -50,37 +59,24 @@ fun ProfileScreen(
 
     var profile by remember { mutableStateOf<ProfileDto?>(null) }
     var emailText by remember { mutableStateOf("") }
-    var userPosts by remember { mutableStateOf<List<QuestionUiModel>>(emptyList()) }
-    var isLoadingPosts by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
         val uid = authRepository.getCurrentUserId()
-        val email = authRepository.getCurrentUserEmail().orEmpty()
+        val email = authRepository.getCurrentUserEmail() ?: ""
         emailText = email
-
-        if (uid != null) {
-            val fetchedProfile = profileRepository.getProfile(uid).getOrNull()
-            profile = fetchedProfile ?: ProfileDto(
-                id = uid,
-                username = email.substringBefore("@").ifBlank { "student" },
-                name = "Student"
-            )
-
-            val postsResult = profileRepository.getUserPosts(uid)
-            userPosts = postsResult.getOrDefault(emptyList())
-        }
-        isLoadingPosts = false
+        val fetched = profileRepository.getProfile(uid).getOrNull()
+        profile = fetched ?: ProfileDto(
+            id = uid ?: "",
+            username = email.substringBefore("@").ifBlank { "student" },
+            name = "Student"
+        )
     }
 
     val username = profile?.username ?: emailText.substringBefore("@").ifBlank { "student" }
-    val displayName = listOfNotNull(profile?.name, profile?.lastName)
-        .joinToString(" ")
-        .trim()
-        .ifBlank { "Student" }
-    val bio = profile?.bio?.ifBlank { "University Student • CampusCircle Member" }
-        ?: "University Student • CampusCircle Member"
-    val initialLetter = displayName.firstOrNull()?.uppercase() ?: "S"
+    val name = profile?.name ?: "Student"
+    val bio = profile?.bio ?: "University Student • CampusCircle Member"
 
+    // Profile photo
     var profileBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
 
     val imagePicker = rememberLauncherForActivityResult(
@@ -93,8 +89,30 @@ fun ProfileScreen(
         }
     }
 
+    // Example posts
+    val posts = remember {
+        listOf(
+            UserPost(
+                title = "How do I add a backlog course to my timetable?",
+                description = "I failed one course last semester and need to retake it alongside my current courses.",
+                category = "Registration",
+                answers = 4,
+                likes = 12
+            ),
+            UserPost(
+                title = "Best cafes near the north campus for group study?",
+                description = "Looking for a place with decent wifi and enough seating for 4-5 people.",
+                category = "Campus Life",
+                answers = 9,
+                likes = 27
+            )
+        )
+    }
+
     Scaffold(
-        topBar = { AppHeader(subtitle = "My Profile") },
+        topBar = {
+            AppHeader(subtitle = "My Profile")
+        },
         bottomBar = {
             BottomNavBar(
                 currentRoute = BottomNavDestination.PROFILE.route,
@@ -111,12 +129,13 @@ fun ProfileScreen(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+
             item {
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Avatar Box: Initial Letter Badge
+                // ---------------- PROFILE PHOTO ----------------
                 Box(
-                    modifier = Modifier.size(110.dp),
+                    modifier = Modifier.size(120.dp),
                     contentAlignment = Alignment.BottomEnd
                 ) {
                     if (profileBitmap != null) {
@@ -124,98 +143,116 @@ fun ProfileScreen(
                             bitmap = profileBitmap!!.asImageBitmap(),
                             contentDescription = "Profile Photo",
                             modifier = Modifier
-                                .size(110.dp)
+                                .size(120.dp)
                                 .clip(CircleShape),
                             contentScale = ContentScale.Crop
                         )
                     } else {
                         Box(
                             modifier = Modifier
-                                .size(110.dp)
+                                .size(120.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary),
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = initialLetter,
-                                fontSize = 44.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Profile",
+                                modifier = Modifier.size(65.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
 
-                    // Change Photo Button
+                    // Camera button
                     Box(
                         modifier = Modifier
-                            .size(34.dp)
+                            .size(38.dp)
                             .clip(CircleShape)
                             .background(Color(0xFF333333))
-                            .clickable { imagePicker.launch("image/*") },
+                            .clickable {
+                                imagePicker.launch("image/*")
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.PhotoCamera,
                             contentDescription = "Change Photo",
                             tint = Color.White,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
                     text = "Change profile photo",
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable { imagePicker.launch("image/*") }
+                    modifier = Modifier.clickable {
+                        imagePicker.launch("image/*")
+                    }
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
-                // Username
-                Column(
+                // ---------------- USERNAME ----------------
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.Start
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Username",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "@$username",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Personal Info Card
-                ProfileInfoCard(title = "Personal Information") {
-                    ProfileField(label = "Name", value = displayName)
-                    if (emailText.isNotBlank()) {
-                        ProfileField(label = "College Email", value = emailText)
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "Username",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "@$username",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(15.dp))
 
-                // Bio Card
-                ProfileInfoCard(title = "Bio") {
+                // ---------------- PERSONAL INFORMATION ----------------
+                ProfileInfoCard(
+                    title = "Personal Information"
+                ) {
+                    ProfileField(
+                        label = "Name",
+                        value = name
+                    )
+                    if (emailText.isNotBlank()) {
+                        ProfileField(
+                            label = "Email",
+                            value = emailText
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(15.dp))
+
+                // ---------------- BIO ----------------
+                ProfileInfoCard(
+                    title = "Bio"
+                ) {
                     Text(
                         text = bio,
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurface,
-                        lineHeight = 20.sp
+                        lineHeight = 21.sp
                     )
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-                // Log out
+                // ---------------- LOG OUT BUTTON ----------------
                 Button(
                     onClick = {
                         scope.launch {
@@ -229,25 +266,25 @@ fun ProfileScreen(
                         .height(48.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Log Out", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("Log Out", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(25.dp))
 
-                // Posts Header
+                // ---------------- POSTS ----------------
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "Posts Created",
-                        fontSize = 19.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "(${userPosts.size})",
-                        fontSize = 14.sp,
+                        text = "(${posts.size})",
+                        fontSize = 15.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -255,59 +292,16 @@ fun ProfileScreen(
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
-            // Real Posts
-            if (isLoadingPosts) {
-                item {
-                    CircularProgressIndicator(modifier = Modifier.padding(16.dp))
-                }
-            } else if (userPosts.isEmpty()) {
-                item {
-                    Text(
-                        text = "You haven't posted any questions yet.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 14.sp,
-                        modifier = Modifier.padding(vertical = 16.dp)
-                    )
-                }
-            } else {
-                items(userPosts, key = { it.id }) { post ->
-                    QuestionCard(
-                        question = post,
-                        onClick = { },
-                        onUpvoteClick = { }
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
+            // ---------------- POST CARDS ----------------
+            items(posts) { post ->
+                PostCard(post)
+                Spacer(modifier = Modifier.height(14.dp))
             }
 
             item {
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(25.dp))
             }
         }
-    }
-}
-
-@Composable
-fun ProfileInfoCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
-            Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(modifier = Modifier.height(10.dp))
-            content()
-        }
-    }
-}
-
-@Composable
-fun ProfileField(label: String, value: String) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(text = label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(text = value, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
     }
 }
 
@@ -315,6 +309,134 @@ fun ProfileField(label: String, value: String) {
 @Composable
 fun ProfileScreenPreview() {
     CampusQnATheme {
-        ProfileScreen()
+        ProfileScreen(
+            onNavDestinationSelected = {}
+        )
+    }
+}
+
+// ============================================================
+// PROFILE INFO CARD
+// ============================================================
+@Composable
+fun ProfileInfoCard(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 2.dp
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Text(
+                text = title,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            content()
+        }
+    }
+}
+
+// ============================================================
+// PROFILE FIELD
+// ============================================================
+@Composable
+fun ProfileField(
+    label: String,
+    value: String
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            fontSize = 15.sp,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+// ============================================================
+// POST CARD
+// ============================================================
+@Composable
+fun PostCard(post: UserPost) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 6.dp
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(15.dp)
+        ) {
+            Text(
+                text = post.title,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(7.dp))
+            Text(
+                text = post.description,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 18.sp
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Surface(
+                shape = RoundedCornerShape(5.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Text(
+                    text = post.category,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(
+                        horizontal = 8.dp,
+                        vertical = 4.dp
+                    )
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "♥ ${post.likes}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(15.dp))
+                Text(
+                    text = "${post.answers} answers",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }

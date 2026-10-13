@@ -1,4 +1,3 @@
-
 package com.MADproject.quoraforuniversities
 
 import androidx.compose.foundation.background
@@ -27,8 +26,10 @@ import kotlinx.coroutines.delay
 @Composable
 fun SearchPage(
     questions: List<QuestionUiModel>,
+    savedPostIds: Set<String> = emptySet(),
     onQuestionClick: (String) -> Unit = {},
     onUpvoteClick: (String) -> Unit = {},
+    onBookmarkClick: ((String) -> Unit)? = null,
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
 ) {
 
@@ -109,6 +110,8 @@ fun SearchPage(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
                 .padding(innerPadding)
+                .navigationBarsPadding()
+                .imePadding()
                 .padding(horizontal = 16.dp)
         ) {
 
@@ -246,7 +249,9 @@ fun SearchPage(
                                 QuestionCard(
                                     question = question,
                                     onClick = onQuestionClick,
-                                    onUpvoteClick = onUpvoteClick
+                                    onUpvoteClick = onUpvoteClick,
+                                    onBookmarkClick = onBookmarkClick,
+                                    isBookmarked = savedPostIds.contains(question.id)
                                 )
                             }
                         }
