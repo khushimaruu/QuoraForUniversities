@@ -33,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.MADproject.quoraforuniversities.components.ErrorBanner
 import com.MADproject.quoraforuniversities.components.formatAuthErrorMessage
-import com.MADproject.quoraforuniversities.components.isCollegeEmail
 import com.MADproject.quoraforuniversities.data.AuthRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 import kotlinx.coroutines.launch
@@ -105,7 +104,7 @@ fun SignUpPage(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Connect with students and professors from your university",
+                    text = "Connect with students and professors from NMIMS",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
@@ -151,8 +150,8 @@ fun SignUpPage(
                         errorMessage = null
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("University / College") },
-                    placeholder = { Text("e.g. Mukesh Patel School of Technology") },
+                    label = { Text("School / College Name") },
+                    placeholder = { Text("e.g. MPSTME, NMIMS") },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.School,
@@ -173,7 +172,7 @@ fun SignUpPage(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // University Email
+                // University Email (Strictly @nmims.in)
                 OutlinedTextField(
                     value = email,
                     onValueChange = {
@@ -181,8 +180,8 @@ fun SignUpPage(
                         errorMessage = null
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("College Email (.edu or .ac.in)") },
-                    placeholder = { Text("student@university.edu") },
+                    label = { Text("NMIMS Email (@nmims.in)") },
+                    placeholder = { Text("student@nmims.in") },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.Email,
@@ -289,16 +288,21 @@ fun SignUpPage(
                     onClick = {
                         val trimmedName = fullName.trim()
                         val trimmedUniversity = universityName.trim()
-                        val trimmedEmail = email.trim()
+                        val trimmedEmail = email.trim().lowercase()
                         val trimmedPassword = password.trim()
                         val trimmedConfirmPassword = confirmPassword.trim()
+
+                        // Strictly validate @nmims.in only
+                        val isNmimsEmail = trimmedEmail.endsWith("@nmims.in") &&
+                                trimmedEmail.length > "@nmims.in".length &&
+                                !trimmedEmail.startsWith("@")
 
                         when {
                             trimmedName.isBlank() || trimmedUniversity.isBlank() || trimmedEmail.isBlank() || trimmedPassword.isBlank() -> {
                                 errorMessage = "Please fill in all required fields."
                             }
-                            !isCollegeEmail(trimmedEmail) -> {
-                                errorMessage = "Please enter a valid college email address (ending in .edu or .ac.in)."
+                            !isNmimsEmail -> {
+                                errorMessage = "Only NMIMS email addresses ending with @nmims.in are allowed."
                             }
                             trimmedPassword.length < 6 -> {
                                 errorMessage = "Password must be at least 6 characters long."

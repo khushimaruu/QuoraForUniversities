@@ -13,30 +13,29 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.tooling.preview.Preview
+import com.MADproject.quoraforuniversities.components.AppHeader
+import com.MADproject.quoraforuniversities.components.BottomNavBar
+import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import com.MADproject.quoraforuniversities.data.AuthRepository
 import com.MADproject.quoraforuniversities.data.ProfileDto
 import com.MADproject.quoraforuniversities.data.ProfileRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
-import com.MADproject.quoraforuniversities.components.AppHeader
-import com.MADproject.quoraforuniversities.components.BottomNavBar
-import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import kotlinx.coroutines.launch
 
 data class UserPost(
@@ -63,6 +62,11 @@ fun ProfileScreen(
     var profile by remember { mutableStateOf<ProfileDto?>(null) }
     var emailText by remember { mutableStateOf("") }
 
+    // Edit Bio Dialog State
+    var showEditBioDialog by remember { mutableStateOf(false) }
+    var editedBioText by remember { mutableStateOf("") }
+    var isSavingBio by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         val uid = authRepository.getCurrentUserId()
         val email = authRepository.getCurrentUserEmail() ?: ""
@@ -77,9 +81,12 @@ fun ProfileScreen(
 
     val username = profile?.username ?: emailText.substringBefore("@").ifBlank { "student" }
     val name = profile?.name ?: "Student"
-    val bio = profile?.bio ?: "University Student • CampusCircle Member"
+    val bio = profile?.bio?.takeIf { it.isNotBlank() } ?: "No bio added yet. Click edit to add one!"
 
-    // Profile photo
+    // Initial letter for the avatar
+    val initialLetter = (if (name.isNotBlank()) name else username).firstOrNull()?.uppercase() ?: "U"
+
+    // Profile photo picker
     var profileBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
 
     val imagePicker = rememberLauncherForActivityResult(
@@ -92,7 +99,6 @@ fun ProfileScreen(
         }
     }
 
-    // Example posts
     val posts = remember {
         listOf(
             UserPost(
@@ -128,9 +134,7 @@ fun ProfileScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .padding(paddingValues)
-                .navigationBarsPadding()
-                .imePadding(),
+                .padding(paddingValues),
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -138,7 +142,7 @@ fun ProfileScreen(
             item {
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // ---------------- PROFILE PHOTO ----------------
+                // ---------------- PROFILE PHOTO / DEFAULT INITIAL AVATAR ----------------
                 Box(
                     modifier = Modifier.size(120.dp),
                     contentAlignment = Alignment.BottomEnd
@@ -153,23 +157,24 @@ fun ProfileScreen(
                             contentScale = ContentScale.Crop
                         )
                     } else {
+                        // Default initial letter avatar
                         Box(
                             modifier = Modifier
                                 .size(120.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                                .background(MaterialTheme.colorScheme.primary),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = "Profile",
-                                modifier = Modifier.size(65.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            Text(
+                                text = initialLetter,
+                                fontSize = 48.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
                             )
                         }
                     }
 
-                    // Camera button
+                    // Camera button to change photo
                     Box(
                         modifier = Modifier
                             .size(38.dp)
@@ -243,29 +248,62 @@ fun ProfileScreen(
 
                 Spacer(modifier = Modifier.height(15.dp))
 
-                // ---------------- BIO ----------------
-                ProfileInfoCard(
-                    title = "Bio"
+                // ---------------- BIO CARD WITH EDIT BUTTON ----------------
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
-                    Text(
-                        text = bio,
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        lineHeight = 21.sp
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Bio",
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            IconButton(
+                                onClick = {
+                                    editedBioText = profile?.bio.orEmpty()
+                                    showEditBioDialog = true
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit Bio",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = bio,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            lineHeight = 21.sp
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(15.dp))
 
-                // ---------------- SAVED POSTS CARD ----------------
+                // ---------------- SAVED POSTS SHORTCUT ----------------
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onSavedPostsClick() },
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Row(
@@ -284,26 +322,15 @@ fun ProfileScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
                                 text = "Saved Posts",
-                                fontSize = 16.sp,
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (savedCount > 0) {
-                                Text(
-                                    text = "$savedCount",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                            }
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = "Open",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Text(
+                            text = "$savedCount saved",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
 
@@ -360,21 +387,76 @@ fun ProfileScreen(
             }
         }
     }
+
+    // ---------------- EDIT BIO DIALOG ----------------
+    if (showEditBioDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isSavingBio) showEditBioDialog = false },
+            title = { Text("Edit Bio", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text(
+                        "Tell fellow students a bit about your major, interests, or year.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = editedBioText,
+                        onValueChange = { editedBioText = it },
+                        placeholder = { Text("e.g. 2nd Year CSE @ MPSTME • Tech enthusiast") },
+                        minLines = 3,
+                        maxLines = 5,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val current = profile ?: return@Button
+                        isSavingBio = true
+                        scope.launch {
+                            val updated = current.copy(bio = editedBioText.trim())
+                            val result = profileRepository.updateProfile(updated)
+                            isSavingBio = false
+                            if (result.isSuccess) {
+                                profile = updated
+                                showEditBioDialog = false
+                            }
+                        }
+                    },
+                    enabled = !isSavingBio
+                ) {
+                    if (isSavingBio) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showEditBioDialog = false },
+                    enabled = !isSavingBio
+                ) {
+                    Text("Cancel")
+                }
+            },
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
 }
 
 @Preview(showBackground = true)
 @Composable
 fun ProfileScreenPreview() {
     CampusQnATheme {
-        ProfileScreen(
-            onNavDestinationSelected = {}
-        )
+        ProfileScreen()
     }
 }
 
-// ============================================================
-// PROFILE INFO CARD
-// ============================================================
 @Composable
 fun ProfileInfoCard(
     title: String,
@@ -383,12 +465,8 @@ fun ProfileInfoCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 2.dp
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
@@ -406,9 +484,6 @@ fun ProfileInfoCard(
     }
 }
 
-// ============================================================
-// PROFILE FIELD
-// ============================================================
 @Composable
 fun ProfileField(
     label: String,
@@ -432,20 +507,13 @@ fun ProfileField(
     }
 }
 
-// ============================================================
-// POST CARD
-// ============================================================
 @Composable
 fun PostCard(post: UserPost) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 6.dp
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
         Column(
             modifier = Modifier
@@ -472,16 +540,11 @@ fun PostCard(post: UserPost) {
                 Text(
                     text = post.category,
                     fontSize = 11.sp,
-                    modifier = Modifier.padding(
-                        horizontal = 8.dp,
-                        vertical = 4.dp
-                    )
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                 )
             }
             Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "♥ ${post.likes}",
                     fontSize = 12.sp,
