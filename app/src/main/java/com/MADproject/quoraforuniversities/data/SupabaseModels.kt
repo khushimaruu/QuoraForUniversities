@@ -109,6 +109,26 @@ data class CreateBookmarkDto(
     @SerialName("post_id") val postId: String
 )
 
+@Serializable
+data class ReportDto(
+    val id: String? = null,
+    @SerialName("reporter_id") val reporterId: String? = null,
+    @SerialName("post_id") val postId: String? = null,
+    @SerialName("reply_id") val replyId: String? = null,
+    val reason: String = "",
+    val status: String = "pending",
+    @SerialName("created_at") val createdAt: String? = null
+)
+
+@Serializable
+data class CreateReportDto(
+    @SerialName("reporter_id") val reporterId: String,
+    @SerialName("post_id") val postId: String? = null,
+    @SerialName("reply_id") val replyId: String? = null,
+    val reason: String,
+    val status: String = "pending"
+)
+
 fun PostDto.toUiModel(
     authorName: String = "Anonymous",
     voteCount: Int = 0,
@@ -123,6 +143,7 @@ fun PostDto.toUiModel(
 
     return QuestionUiModel(
         id = id ?: "",
+        authorId = userId ?: "",
         title = title,
         body = content,
         authorName = if (isAnonymous) "Anonymous" else authorName,
@@ -155,6 +176,7 @@ fun PostWithProfileDto.toUiModel(
 
     return QuestionUiModel(
         id = id ?: "",
+        authorId = userId ?: "",
         title = title,
         body = content,
         authorName = resolvedAuthorName,
@@ -167,7 +189,6 @@ fun PostWithProfileDto.toUiModel(
         currentUserVote = currentUserVote
     )
 }
-
 
 fun ReplyDto.toUiModel(
     authorName: String = "Anonymous",

@@ -9,7 +9,11 @@ import kotlinx.coroutines.CancellationException
 
 class PostRepository {
 
-    // FETCH ALL POSTS WITH LIVE VOTE COUNTS FROM ALL USERS
+    companion object {
+        const val REPORT_HIDE_THRESHOLD = 3
+    }
+
+    // FETCH ALL POSTS WITH LIVE VOTE COUNTS AND AUTOMATED REPORT FILTERING
     suspend fun getPosts(): Result<List<QuestionUiModel>> {
         return runCatching<List<QuestionUiModel>> {
             val dbPosts = SupabaseClient.client.from("posts")
@@ -50,23 +54,44 @@ class PostRepository {
                 emptyMap()
             }
 
-            dbPosts.map { dto ->
-                val upvotes = upvoteCounts[dto.id ?: ""] ?: 0
-                val downvotes = downvoteCounts[dto.id ?: ""] ?: 0
-                dto.toUiModel(
-                    voteCount = upvotes - downvotes,
-                    answerCount = replyCounts[dto.id ?: ""] ?: 0,
-                    upvoteCount = upvotes,
-                    downvoteCount = downvotes,
-                    currentUserVote = userVotes[dto.id ?: ""] ?: 0
-                )
+            // Fetch active reports to filter out posts exceeding threshold
+            val allReports = runCatching {
+                SupabaseClient.client.from("reports")
+                    .select()
+                    .decodeList<ReportDto>()
+            }.getOrDefault(emptyList()).filter { it.postId != null && it.status != "dismissed" }
+
+            val postReportCounts = allReports.groupBy { it.postId ?: "" }.mapValues { it.value.size }
+            val userReportedPostIds = if (currentUserId != null) {
+                allReports.filter { it.reporterId == currentUserId }.mapNotNull { it.postId }.toSet()
+            } else {
+                emptySet()
             }
+
+            dbPosts
+                .filter { dto ->
+                    val postId = dto.id ?: ""
+                    val reportCount = postReportCounts[postId] ?: 0
+                    // Soft-hide if threshold reached OR reported by this current user
+                    reportCount < REPORT_HIDE_THRESHOLD && !userReportedPostIds.contains(postId)
+                }
+                .map { dto ->
+                    val upvotes = upvoteCounts[dto.id ?: ""] ?: 0
+                    val downvotes = downvoteCounts[dto.id ?: ""] ?: 0
+                    dto.toUiModel(
+                        voteCount = upvotes - downvotes,
+                        answerCount = replyCounts[dto.id ?: ""] ?: 0,
+                        upvoteCount = upvotes,
+                        downvoteCount = downvotes,
+                        currentUserVote = userVotes[dto.id ?: ""] ?: 0
+                    )
+                }
         }.recover {
             emptyList()
         }
     }
 
-    // SEARCH POSTS DIRECTLY THROUGH SUPABASE
+    // SEARCH POSTS DIRECTLY THROUGH SUPABASE (WITH REPORT FILTERING)
     suspend fun searchPosts(query: String): Result<List<QuestionUiModel>> {
         val searchText = query.trim()
 
@@ -117,23 +142,75 @@ class PostRepository {
                 emptyMap()
             }
 
+            // Reports filter
+            val allReports = runCatching {
+                SupabaseClient.client.from("reports")
+                    .select()
+                    .decodeList<ReportDto>()
+            }.getOrDefault(emptyList()).filter { it.postId != null && it.status != "dismissed" }
+
+            val postReportCounts = allReports.groupBy { it.postId ?: "" }.mapValues { it.value.size }
+            val userReportedPostIds = if (currentUserId != null) {
+                allReports.filter { it.reporterId == currentUserId }.mapNotNull { it.postId }.toSet()
+            } else {
+                emptySet()
+            }
+
             Result.success(
-                dbPosts.map { dto ->
-                    val upvotes = upvoteCounts[dto.id ?: ""] ?: 0
-                    val downvotes = downvoteCounts[dto.id ?: ""] ?: 0
-                    dto.toUiModel(
-                        voteCount = upvotes - downvotes,
-                        answerCount = replyCounts[dto.id ?: ""] ?: 0,
-                        upvoteCount = upvotes,
-                        downvoteCount = downvotes,
-                        currentUserVote = userVotes[dto.id ?: ""] ?: 0
-                    )
-                }
+                dbPosts
+                    .filter { dto ->
+                        val postId = dto.id ?: ""
+                        val reportCount = postReportCounts[postId] ?: 0
+                        reportCount < REPORT_HIDE_THRESHOLD && !userReportedPostIds.contains(postId)
+                    }
+                    .map { dto ->
+                        val upvotes = upvoteCounts[dto.id ?: ""] ?: 0
+                        val downvotes = downvoteCounts[dto.id ?: ""] ?: 0
+                        dto.toUiModel(
+                            voteCount = upvotes - downvotes,
+                            answerCount = replyCounts[dto.id ?: ""] ?: 0,
+                            upvoteCount = upvotes,
+                            downvoteCount = downvotes,
+                            currentUserVote = userVotes[dto.id ?: ""] ?: 0
+                        )
+                    }
             )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    // REPORT POST (ONE REPORT PER USER PER POST)
+    suspend fun reportPost(postId: String, reason: String): Result<Unit> {
+        return runCatching<Unit> {
+            val currentUser = SupabaseClient.client.auth.currentUserOrNull()
+                ?: error("User must be logged in to report content.")
+
+            // Check if user already reported this post
+            val existingReports = SupabaseClient.client.from("reports")
+                .select {
+                    filter {
+                        eq("reporter_id", currentUser.id)
+                        eq("post_id", postId)
+                    }
+                }
+                .decodeList<ReportDto>()
+
+            if (existingReports.isNotEmpty()) {
+                error("You have already reported this post.")
+            }
+
+            val reportDto = CreateReportDto(
+                reporterId = currentUser.id,
+                postId = postId,
+                reason = reason.trim(),
+                status = "pending"
+            )
+
+            SupabaseClient.client.from("reports").insert(reportDto)
+            Unit
         }
     }
 
@@ -146,7 +223,8 @@ class PostRepository {
     ): Result<Unit> {
         return runCatching<Unit> {
             val currentUser = SupabaseClient.client.auth.currentUserOrNull()
-            val currentUserId = currentUser?.id ?: error("User not logged in")
+                ?: error("User not logged in")
+            val currentUserId = currentUser.id
             val email = currentUser.email.orEmpty()
             val username = email.substringBefore("@").ifBlank { "student" }
 
@@ -175,7 +253,7 @@ class PostRepository {
         }
     }
 
-    // VOTE POST: Explicitly typed with <Unit> to prevent Result<Any> mismatch
+    // VOTE POST
     suspend fun votePost(postId: String, voteType: Int): Result<Unit> {
         return runCatching<Unit> {
             val currentUser = SupabaseClient.client.auth.currentUserOrNull()
