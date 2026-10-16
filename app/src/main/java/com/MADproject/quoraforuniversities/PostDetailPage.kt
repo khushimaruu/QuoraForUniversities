@@ -1,6 +1,5 @@
 package com.MADproject.quoraforuniversities
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,6 +8,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OutlinedFlag
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
@@ -28,6 +29,7 @@ import com.MADproject.quoraforuniversities.components.AppHeader
 import com.MADproject.quoraforuniversities.components.BottomNavBar
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
+import com.MADproject.quoraforuniversities.components.ReportPostDialog
 import com.MADproject.quoraforuniversities.data.GeminiService
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 import kotlinx.coroutines.launch
@@ -49,12 +51,15 @@ fun PostDetailPage(
     onUpvoteClick: () -> Unit = {},
     onDownvoteClick: () -> Unit = {},
     onBookmarkClick: ((String) -> Unit)? = null,
+    onReportClick: ((postId: String, reason: String) -> Unit)? = null,
     onSubmitReply: (text: String, onResult: (String?) -> Unit) -> Unit = { _, _ -> },
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
 ) {
     var replyText by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
     var replyError by remember { mutableStateOf<String?>(null) }
+    var showMenu by remember { mutableStateOf(false) }
+    var showReportDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     Scaffold(
@@ -92,13 +97,54 @@ fun PostDetailPage(
                                 .fillMaxWidth()
                                 .padding(16.dp)
                         ) {
-                            Text(
-                                text = if (question.isAnonymous) "Anonymous" else question.authorName,
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            // Top Row: Author & 3-dots Menu
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = if (question.isAnonymous) "Anonymous" else question.authorName,
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                                Box {
+                                    IconButton(
+                                        onClick = { showMenu = true },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.MoreVert,
+                                            contentDescription = "More Options",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+
+                                    DropdownMenu(
+                                        expanded = showMenu,
+                                        onDismissRequest = { showMenu = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Report Post", color = MaterialTheme.colorScheme.error) },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Default.OutlinedFlag,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.error
+                                                )
+                                            },
+                                            onClick = {
+                                                showMenu = false
+                                                showReportDialog = true
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
 
                             Text(
                                 text = question.title,
@@ -327,6 +373,16 @@ fun PostDetailPage(
                 }
             }
         }
+    }
+
+    if (showReportDialog) {
+        ReportPostDialog(
+            onDismiss = { showReportDialog = false },
+            onConfirmReport = { reason ->
+                showReportDialog = false
+                onReportClick?.invoke(question.id, reason)
+            }
+        )
     }
 }
 

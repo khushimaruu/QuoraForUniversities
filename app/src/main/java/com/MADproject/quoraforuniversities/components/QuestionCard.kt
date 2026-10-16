@@ -7,6 +7,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OutlinedFlag
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -14,7 +16,7 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -23,10 +25,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /** Plain UI-layer model */
 data class QuestionUiModel(
     val id: String,
+    val authorId: String = "",
     val title: String,
     val body: String,
     val authorName: String,
@@ -36,11 +40,19 @@ data class QuestionUiModel(
     val answerCount: Int = 0,
     val upvoteCount: Int = voteCount,
     val downvoteCount: Int = 0,
-    val currentUserVote: Int = 0// "upvote", "downvote", or null
+    val currentUserVote: Int = 0 // 1 for upvote, -1 for downvote, 0 for none
+)
+
+val CommunityReportReasons = listOf(
+    "Harassment or Abusive Language",
+    "False or Misleading Information",
+    "Spam or Advertisements",
+    "Academic Dishonesty / Cheating",
+    "Other"
 )
 
 /**
- * Reusable post card with separate Like and Dislike counters.
+ * Reusable post card with separate Like/Dislike, 3-dots overflow menu, and Reporting.
  */
 @Composable
 fun QuestionCard(
@@ -50,8 +62,12 @@ fun QuestionCard(
     modifier: Modifier = Modifier,
     onDownvoteClick: ((String) -> Unit)? = null,
     onBookmarkClick: ((String) -> Unit)? = null,
+    onReportClick: ((postId: String, reason: String) -> Unit)? = null,
     isBookmarked: Boolean = false
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+    var showReportDialog by remember { mutableStateOf(false) }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -62,47 +78,88 @@ fun QuestionCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
 
-            // Author row
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val avatarBrush = if (question.isAnonymous) {
-                    Brush.linearGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            MaterialTheme.colorScheme.surfaceVariant
+            // Author row + 3-dots overflow menu
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val avatarBrush = if (question.isAnonymous) {
+                        Brush.linearGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.surfaceVariant,
+                                MaterialTheme.colorScheme.surfaceVariant
+                            )
                         )
-                    )
-                } else {
-                    Brush.linearGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.primary,
-                            MaterialTheme.colorScheme.secondary
+                    } else {
+                        Brush.linearGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary,
+                                MaterialTheme.colorScheme.secondary
+                            )
                         )
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(avatarBrush),
-                    contentAlignment = Alignment.Center
-                ) {
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(avatarBrush),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (question.isAnonymous) "?" else question.authorName.firstOrNull()?.uppercase() ?: "U",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = if (question.isAnonymous)
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            else
+                                Color.White
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = if (question.isAnonymous) "?" else question.authorName.first().uppercase(),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = if (question.isAnonymous)
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        else
-                            Color.White
+                        text = if (question.isAnonymous) "Anonymous" else question.authorName,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = if (question.isAnonymous) "Anonymous" else question.authorName,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+
+                // 3-dots menu button
+                Box {
+                    IconButton(
+                        onClick = { showMenu = true },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "More Options",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Report Post", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.OutlinedFlag,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                showReportDialog = true
+                            }
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -174,6 +231,7 @@ fun QuestionCard(
                             modifier = Modifier.size(16.dp),
                             tint = if (question.currentUserVote == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
                         )
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = question.upvoteCount.toString(),
                             style = MaterialTheme.typography.labelMedium,
@@ -196,6 +254,7 @@ fun QuestionCard(
                             modifier = Modifier.size(16.dp),
                             tint = if (question.currentUserVote == -1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = question.downvoteCount.toString(),
                             style = MaterialTheme.typography.labelMedium,
@@ -237,4 +296,107 @@ fun QuestionCard(
             }
         }
     }
+
+    if (showReportDialog) {
+        ReportPostDialog(
+            onDismiss = { showReportDialog = false },
+            onConfirmReport = { selectedReason ->
+                showReportDialog = false
+                onReportClick?.invoke(question.id, selectedReason)
+            }
+        )
+    }
+}
+
+/**
+ * Reusable clean community guidelines report dialog
+ */
+@Composable
+fun ReportPostDialog(
+    onDismiss: () -> Unit,
+    onConfirmReport: (reason: String) -> Unit
+) {
+    var selectedReason by remember { mutableStateOf(CommunityReportReasons.first()) }
+    var customDetails by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Report Content",
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            ) {
+                Text(
+                    text = "Help us understand what's wrong with this post. Posts reported by multiple students are automatically hidden.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 18.sp
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                CommunityReportReasons.forEach { reason ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedReason = reason }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = (selectedReason == reason),
+                            onClick = { selectedReason = reason }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = reason,
+                            fontSize = 14.sp,
+                            fontWeight = if (selectedReason == reason) FontWeight.SemiBold else FontWeight.Normal
+                        )
+                    }
+                }
+
+                if (selectedReason == "Other") {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = customDetails,
+                        onValueChange = { customDetails = it },
+                        placeholder = { Text("Please specify (optional)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val finalReason = if (selectedReason == "Other" && customDetails.isNotBlank()) {
+                        "Other: ${customDetails.trim()}"
+                    } else {
+                        selectedReason
+                    }
+                    onConfirmReport(finalReason)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("Submit Report", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        shape = RoundedCornerShape(16.dp)
+    )
 }
