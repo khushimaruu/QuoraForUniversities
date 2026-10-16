@@ -29,6 +29,7 @@ fun SavedPostsPage(
     onQuestionClick: (String) -> Unit = {},
     onUpvoteClick: (String) -> Unit = {},
     onBookmarkClick: (String) -> Unit = {},
+    onReportClick: ((postId: String, reason: String) -> Unit)? = null,
     onBackClick: () -> Unit = {},
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
 ) {
@@ -118,6 +119,7 @@ fun SavedPostsPage(
                                 onClick = onQuestionClick,
                                 onUpvoteClick = onUpvoteClick,
                                 onBookmarkClick = onBookmarkClick,
+                                onReportClick = onReportClick,
                                 isBookmarked = savedPostIds.contains(question.id)
                             )
                         }

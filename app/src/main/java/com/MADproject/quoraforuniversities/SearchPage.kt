@@ -30,6 +30,7 @@ fun SearchPage(
     onQuestionClick: (String) -> Unit = {},
     onUpvoteClick: (String) -> Unit = {},
     onBookmarkClick: ((String) -> Unit)? = null,
+    onReportClick: ((postId: String, reason: String) -> Unit)? = null,
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
 ) {
 
@@ -91,18 +92,15 @@ fun SearchPage(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-
         topBar = {
             AppHeader()
         },
-
         bottomBar = {
             BottomNavBar(
                 currentRoute = BottomNavDestination.SEARCH.route,
                 onDestinationSelected = onNavDestinationSelected
             )
         }
-
     ) { innerPadding ->
 
         Column(
@@ -127,24 +125,19 @@ fun SearchPage(
             // SEARCH BAR
             OutlinedTextField(
                 value = searchQuery,
-
                 onValueChange = {
                     searchQuery = it
                 },
-
                 modifier = Modifier.fillMaxWidth(),
-
                 placeholder = {
                     Text("Search questions or categories...")
                 },
-
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Search"
                     )
                 },
-
                 singleLine = true
             )
 
@@ -173,12 +166,10 @@ fun SearchPage(
                                 .clickable {
                                     searchQuery = category
                                 },
-
                             colors = CardDefaults.cardColors(
                                 containerColor =
                                     MaterialTheme.colorScheme.surface
                             ),
-
                             elevation = CardDefaults.cardElevation(
                                 defaultElevation = 3.dp
                             )
@@ -199,7 +190,6 @@ fun SearchPage(
                 when {
 
                     isSearching -> {
-
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -209,7 +199,6 @@ fun SearchPage(
                     }
 
                     searchError != null -> {
-
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -222,7 +211,6 @@ fun SearchPage(
                     }
 
                     searchResults.isEmpty() -> {
-
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -235,22 +223,20 @@ fun SearchPage(
                     }
 
                     else -> {
-
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(14.dp),
                             contentPadding = PaddingValues(bottom = 16.dp)
                         ) {
-
                             items(
                                 items = searchResults,
                                 key = { it.id }
                             ) { question ->
-
                                 QuestionCard(
                                     question = question,
                                     onClick = onQuestionClick,
                                     onUpvoteClick = onUpvoteClick,
                                     onBookmarkClick = onBookmarkClick,
+                                    onReportClick = onReportClick,
                                     isBookmarked = savedPostIds.contains(question.id)
                                 )
                             }
@@ -268,7 +254,6 @@ fun SearchPage(
 fun SearchPagePreview() {
 
     val previewQuestions = listOf(
-
         QuestionUiModel(
             id = "1",
             title = "How do I add a backlog course to my timetable?",
@@ -283,7 +268,6 @@ fun SearchPagePreview() {
             voteCount = 12,
             answerCount = 4
         ),
-
         QuestionUiModel(
             id = "2",
             title = "Best cafes near the north campus for group study?",

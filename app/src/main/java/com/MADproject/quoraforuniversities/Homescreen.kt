@@ -29,6 +29,7 @@ fun HomeScreen(
     onUpvoteClick: (String) -> Unit = {},
     onDownvoteClick: (String) -> Unit = {},
     onBookmarkClick: ((String) -> Unit)? = null,
+    onReportClick: ((postId: String, reason: String) -> Unit)? = null,
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {},
 ) {
     Scaffold(
@@ -73,6 +74,7 @@ fun HomeScreen(
                                 onUpvoteClick = onUpvoteClick,
                                 onDownvoteClick = onDownvoteClick,
                                 onBookmarkClick = onBookmarkClick,
+                                onReportClick = onReportClick,
                                 isBookmarked = savedPostIds.contains(question.id)
                             )
                         }
