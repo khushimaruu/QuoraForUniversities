@@ -1,4 +1,3 @@
-
 package com.MADproject.quoraforuniversities.data
 
 import com.MADproject.quoraforuniversities.ReplyUiModel
@@ -10,9 +9,9 @@ import kotlinx.coroutines.CancellationException
 
 class PostRepository {
 
-    // FETCH ALL POSTS
+    // FETCH ALL POSTS WITH LIVE VOTE COUNTS FROM ALL USERS
     suspend fun getPosts(): Result<List<QuestionUiModel>> {
-        return runCatching {
+        return runCatching<List<QuestionUiModel>> {
             val dbPosts = SupabaseClient.client.from("posts")
                 .select(Columns.raw("*, profiles(*)"))
                 .decodeList<PostWithProfileDto>()
@@ -25,9 +24,41 @@ class PostRepository {
 
             val replyCounts = allReplies.groupBy { it.postId }.mapValues { it.value.size }
 
+            // Fetch votes across all users from Supabase
+            val allVotes = runCatching {
+                SupabaseClient.client.from("votes")
+                    .select()
+                    .decodeList<VoteDto>()
+            }.getOrElse { e ->
+                android.util.Log.e("VOTE_DEBUG", "Error fetching votes: ${e.message}", e)
+                emptyList()
+            }.filter { it.postId != null }
+
+            val upvoteCounts = allVotes.filter { it.voteType == 1 }
+                .groupBy { it.postId ?: "" }
+                .mapValues { it.value.size }
+
+            val downvoteCounts = allVotes.filter { it.voteType == -1 }
+                .groupBy { it.postId ?: "" }
+                .mapValues { it.value.size }
+
+            val currentUserId = SupabaseClient.client.auth.currentUserOrNull()?.id
+            val userVotes = if (currentUserId != null) {
+                allVotes.filter { it.userId == currentUserId && it.postId != null }
+                    .associate { (it.postId ?: "") to it.voteType }
+            } else {
+                emptyMap()
+            }
+
             dbPosts.map { dto ->
+                val upvotes = upvoteCounts[dto.id ?: ""] ?: 0
+                val downvotes = downvoteCounts[dto.id ?: ""] ?: 0
                 dto.toUiModel(
-                    answerCount = replyCounts[dto.id] ?: 0
+                    voteCount = upvotes - downvotes,
+                    answerCount = replyCounts[dto.id ?: ""] ?: 0,
+                    upvoteCount = upvotes,
+                    downvoteCount = downvotes,
+                    currentUserVote = userVotes[dto.id ?: ""] ?: 0
                 )
             }
         }.recover {
@@ -36,10 +67,7 @@ class PostRepository {
     }
 
     // SEARCH POSTS DIRECTLY THROUGH SUPABASE
-    suspend fun searchPosts(
-        query: String
-    ): Result<List<QuestionUiModel>> {
-
+    suspend fun searchPosts(query: String): Result<List<QuestionUiModel>> {
         val searchText = query.trim()
 
         if (searchText.isBlank()) {
@@ -47,7 +75,6 @@ class PostRepository {
         }
 
         return try {
-
             val dbPosts = SupabaseClient.client.from("posts")
                 .select(Columns.raw("*, profiles(*)")) {
                     filter {
@@ -68,14 +95,41 @@ class PostRepository {
 
             val replyCounts = allReplies.groupBy { it.postId }.mapValues { it.value.size }
 
+            val allVotes = runCatching {
+                SupabaseClient.client.from("votes")
+                    .select()
+                    .decodeList<VoteDto>()
+            }.getOrDefault(emptyList()).filter { it.postId != null }
+
+            val upvoteCounts = allVotes.filter { it.voteType == 1 }
+                .groupBy { it.postId ?: "" }
+                .mapValues { it.value.size }
+
+            val downvoteCounts = allVotes.filter { it.voteType == -1 }
+                .groupBy { it.postId ?: "" }
+                .mapValues { it.value.size }
+
+            val currentUserId = SupabaseClient.client.auth.currentUserOrNull()?.id
+            val userVotes = if (currentUserId != null) {
+                allVotes.filter { it.userId == currentUserId && it.postId != null }
+                    .associate { (it.postId ?: "") to it.voteType }
+            } else {
+                emptyMap()
+            }
+
             Result.success(
                 dbPosts.map { dto ->
+                    val upvotes = upvoteCounts[dto.id ?: ""] ?: 0
+                    val downvotes = downvoteCounts[dto.id ?: ""] ?: 0
                     dto.toUiModel(
-                        answerCount = replyCounts[dto.id] ?: 0
+                        voteCount = upvotes - downvotes,
+                        answerCount = replyCounts[dto.id ?: ""] ?: 0,
+                        upvoteCount = upvotes,
+                        downvoteCount = downvotes,
+                        currentUserVote = userVotes[dto.id ?: ""] ?: 0
                     )
                 }
             )
-
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -90,35 +144,22 @@ class PostRepository {
         theme: String,
         isAnonymous: Boolean
     ): Result<Unit> {
-
-        return runCatching {
-
-            val currentUser =
-                SupabaseClient.client.auth.currentUserOrNull()
-
-            val currentUserId =
-                currentUser?.id ?: error("User not logged in")
-
+        return runCatching<Unit> {
+            val currentUser = SupabaseClient.client.auth.currentUserOrNull()
+            val currentUserId = currentUser?.id ?: error("User not logged in")
             val email = currentUser.email.orEmpty()
-
-            val username = email.substringBefore("@")
-                .ifBlank { "student" }
+            val username = email.substringBefore("@").ifBlank { "student" }
 
             val profileDto = ProfileDto(
                 id = currentUserId,
                 username = username,
                 name = username.replaceFirstChar {
-                    if (it.isLowerCase()) {
-                        it.titlecase()
-                    } else {
-                        it.toString()
-                    }
+                    if (it.isLowerCase()) it.titlecase() else it.toString()
                 }
             )
 
             runCatching {
-                SupabaseClient.client.from("profiles")
-                    .upsert(profileDto)
+                SupabaseClient.client.from("profiles").upsert(profileDto)
             }
 
             val dto = CreatePostDto(
@@ -130,19 +171,64 @@ class PostRepository {
             )
 
             SupabaseClient.client.from("posts").insert(dto)
+            Unit
         }
     }
 
-    // VOTE POST
-    suspend fun votePost(postId: String): Result<Unit> {
-        return Result.success(Unit)
+    // VOTE POST: Explicitly typed with <Unit> to prevent Result<Any> mismatch
+    suspend fun votePost(postId: String, voteType: Int): Result<Unit> {
+        return runCatching<Unit> {
+            val currentUser = SupabaseClient.client.auth.currentUserOrNull()
+                ?: error("User not logged in")
+
+            val existingVotes = SupabaseClient.client.from("votes")
+                .select {
+                    filter {
+                        eq("user_id", currentUser.id)
+                        eq("post_id", postId)
+                    }
+                }
+                .decodeList<VoteDto>()
+
+            val existingVote = existingVotes.firstOrNull()
+
+            if (existingVote == null) {
+                SupabaseClient.client.from("votes").insert(
+                    CreateVoteDto(
+                        userId = currentUser.id,
+                        postId = postId,
+                        voteType = voteType
+                    )
+                )
+            } else if (existingVote.voteType != voteType) {
+                SupabaseClient.client.from("votes").update(
+                    {
+                        set("vote_type", voteType)
+                    }
+                ) {
+                    filter {
+                        eq("user_id", currentUser.id)
+                        eq("post_id", postId)
+                    }
+                }
+            }
+            Unit
+        }.onFailure { e ->
+            android.util.Log.e("VOTE_DEBUG", "Failed to vote in Supabase: ${e.message}", e)
+        }
     }
 
+    suspend fun votePost(postId: String, voteType: String): Result<Unit> {
+        return votePost(postId, if (voteType == "downvote") -1 else 1)
+    }
+
+    suspend fun votePost(postId: String): Result<Unit> = votePost(postId, 1)
+    suspend fun upvotePost(postId: String): Result<Unit> = votePost(postId, 1)
+    suspend fun downvotePost(postId: String): Result<Unit> = votePost(postId, -1)
+
     // FETCH REPLIES
-    suspend fun getReplies(
-        postId: String
-    ): Result<List<ReplyUiModel>> {
-        return runCatching {
+    suspend fun getReplies(postId: String): Result<List<ReplyUiModel>> {
+        return runCatching<List<ReplyUiModel>> {
             val dbReplies = SupabaseClient.client.from("replies")
                 .select(Columns.raw("*, profiles(*)")) {
                     filter {
@@ -167,11 +253,8 @@ class PostRepository {
     }
 
     // CREATE REPLY
-    suspend fun createReply(
-        postId: String,
-        content: String
-    ): Result<Unit> {
-        return runCatching {
+    suspend fun createReply(postId: String, content: String): Result<Unit> {
+        return runCatching<Unit> {
             val currentUser = SupabaseClient.client.auth.currentUserOrNull()
             val currentUserId = currentUser?.id ?: error("User not logged in")
             val email = currentUser.email.orEmpty()
@@ -181,11 +264,7 @@ class PostRepository {
                 id = currentUserId,
                 username = username,
                 name = username.replaceFirstChar {
-                    if (it.isLowerCase()) {
-                        it.titlecase()
-                    } else {
-                        it.toString()
-                    }
+                    if (it.isLowerCase()) it.titlecase() else it.toString()
                 }
             )
 
@@ -200,22 +279,24 @@ class PostRepository {
             )
 
             SupabaseClient.client.from("replies").insert(dto)
+            Unit
         }
     }
 
     // BOOKMARK / SAVE POST
     suspend fun bookmarkPost(postId: String): Result<Unit> {
-        return runCatching {
+        return runCatching<Unit> {
             val currentUser = SupabaseClient.client.auth.currentUserOrNull()
             val currentUserId = currentUser?.id ?: error("User not logged in")
             val dto = CreateBookmarkDto(userId = currentUserId, postId = postId)
             SupabaseClient.client.from("bookmarks").insert(dto)
+            Unit
         }
     }
 
     // UNBOOKMARK / REMOVE SAVED POST
     suspend fun unbookmarkPost(postId: String): Result<Unit> {
-        return runCatching {
+        return runCatching<Unit> {
             val currentUser = SupabaseClient.client.auth.currentUserOrNull()
             val currentUserId = currentUser?.id ?: error("User not logged in")
             SupabaseClient.client.from("bookmarks").delete {
@@ -224,6 +305,7 @@ class PostRepository {
                     eq("post_id", postId)
                 }
             }
+            Unit
         }
     }
 
@@ -245,7 +327,7 @@ class PostRepository {
 
     // FETCH SAVED POSTS
     suspend fun getSavedPosts(): Result<List<QuestionUiModel>> {
-        return runCatching {
+        return runCatching<List<QuestionUiModel>> {
             val savedIds = getSavedPostIds()
             if (savedIds.isEmpty()) return Result.success(emptyList())
             val allPosts = getPosts().getOrDefault(emptyList())

@@ -36,9 +36,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         enableEdgeToEdge()
-
         setContent {
             CampusQnATheme {
                 CampusQnAApp()
@@ -59,37 +57,14 @@ fun CampusQnAApp(
     val connectivityStatus by networkObserver.observe().collectAsState(initial = ConnectivityStatus.Available)
     val isOffline = connectivityStatus == ConnectivityStatus.Lost || connectivityStatus == ConnectivityStatus.Unavailable
 
-    var currentScreen by rememberSaveable {
-        mutableStateOf("splash")
-    }
-
-    var selectedQuestion by remember {
-        mutableStateOf<QuestionUiModel?>(null)
-    }
-
-    var questions by remember {
-        mutableStateOf<List<QuestionUiModel>>(emptyList())
-    }
-
-    var isFeedLoading by remember {
-        mutableStateOf(false)
-    }
-
-    var replies by remember {
-        mutableStateOf<List<ReplyUiModel>>(emptyList())
-    }
-
-    var savedPostIds by remember {
-        mutableStateOf<Set<String>>(emptySet())
-    }
-
-    var savedQuestions by remember {
-        mutableStateOf<List<QuestionUiModel>>(emptyList())
-    }
-
-    var isSavedLoading by remember {
-        mutableStateOf(false)
-    }
+    var currentScreen by rememberSaveable { mutableStateOf("splash") }
+    var selectedQuestion by remember { mutableStateOf<QuestionUiModel?>(null) }
+    var questions by remember { mutableStateOf<List<QuestionUiModel>>(emptyList()) }
+    var isFeedLoading by remember { mutableStateOf(false) }
+    var replies by remember { mutableStateOf<List<ReplyUiModel>>(emptyList()) }
+    var savedPostIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var savedQuestions by remember { mutableStateOf<List<QuestionUiModel>>(emptyList()) }
+    var isSavedLoading by remember { mutableStateOf(false) }
 
     fun refreshSavedPosts() {
         scope.launch {
@@ -146,6 +121,68 @@ fun CampusQnAApp(
         }
     }
 
+    // INSTANT UPVOTE: Updates UI numbers on all active screens immediately and saves to DB
+    fun handleUpvote(questionId: String) {
+        val updateLogic: (QuestionUiModel) -> QuestionUiModel = { q ->
+            if (q.id == questionId) {
+                if (q.currentUserVote == 1) {
+                    q // Already liked
+                } else {
+                    val newUp = q.upvoteCount + 1
+                    val newDown = if (q.currentUserVote == -1) (q.downvoteCount - 1).coerceAtLeast(0) else q.downvoteCount
+                    q.copy(
+                        upvoteCount = newUp,
+                        downvoteCount = newDown,
+                        voteCount = newUp - newDown,
+                        currentUserVote = 1
+                    )
+                }
+            } else q
+        }
+
+        questions = questions.map(updateLogic)
+        selectedQuestion = selectedQuestion?.let(updateLogic)
+        savedQuestions = savedQuestions.map(updateLogic)
+
+        scope.launch {
+            val result = postRepository.votePost(questionId, 1)
+            if (result.isSuccess) {
+                refreshQuestions()
+            }
+        }
+    }
+
+    // INSTANT DOWNVOTE: Updates UI numbers on all active screens immediately and saves to DB
+    fun handleDownvote(questionId: String) {
+        val updateLogic: (QuestionUiModel) -> QuestionUiModel = { q ->
+            if (q.id == questionId) {
+                if (q.currentUserVote == -1) {
+                    q // Already disliked
+                } else {
+                    val newDown = q.downvoteCount + 1
+                    val newUp = if (q.currentUserVote == 1) (q.upvoteCount - 1).coerceAtLeast(0) else q.upvoteCount
+                    q.copy(
+                        upvoteCount = newUp,
+                        downvoteCount = newDown,
+                        voteCount = newUp - newDown,
+                        currentUserVote = -1
+                    )
+                }
+            } else q
+        }
+
+        questions = questions.map(updateLogic)
+        selectedQuestion = selectedQuestion?.let(updateLogic)
+        savedQuestions = savedQuestions.map(updateLogic)
+
+        scope.launch {
+            val result = postRepository.votePost(questionId, -1)
+            if (result.isSuccess) {
+                refreshQuestions()
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         refreshQuestions()
         if (authRepository.isLoggedIn()) {
@@ -155,7 +192,6 @@ fun CampusQnAApp(
         currentScreen = if (authRepository.isLoggedIn()) "home" else "landing"
     }
 
-    // Intercept system back button presses to return to home / landing
     if (currentScreen != "splash" && currentScreen != "home" && currentScreen != "landing") {
         BackHandler {
             currentScreen = if (authRepository.isLoggedIn()) "home" else "landing"
@@ -167,238 +203,189 @@ fun CampusQnAApp(
             targetState = currentScreen,
             transitionSpec = {
                 fadeIn(animationSpec = tween(220)) + slideInHorizontally(animationSpec = tween(220)) { width -> width / 12 } togetherWith
-                fadeOut(animationSpec = tween(180))
+                        fadeOut(animationSpec = tween(180))
             },
             label = "ScreenTransition"
         ) { targetScreen ->
             when (targetScreen) {
+                "splash" -> SplashScreen()
 
-        "splash" -> {
-            SplashScreen()
-        }
-
-        "landing" -> {
-            LandingPage(
-                onLoginClick = {
-                    currentScreen = "login"
-                },
-                onSignUpClick = {
-                    currentScreen = "signup"
+                "landing" -> {
+                    LandingPage(
+                        onLoginClick = { currentScreen = "login" },
+                        onSignUpClick = { currentScreen = "signup" }
+                    )
                 }
-            )
-        }
 
-        "login" -> {
-            LoginPage(
-                authRepository = authRepository,
-                onBackClick = {
-                    currentScreen = "landing"
-                },
-                onLoginSuccess = {
-                    refreshQuestions()
-                    refreshSavedPosts()
-                    currentScreen = "home"
-                },
-                onNavigateToSignUp = {
-                    currentScreen = "signup"
-                }
-            )
-        }
-
-        "signup" -> {
-            SignUpPage(
-                authRepository = authRepository,
-                onBackClick = {
-                    currentScreen = "landing"
-                },
-                onSignUpSuccess = {
-                    refreshQuestions()
-                    refreshSavedPosts()
-                    currentScreen = "home"
-                },
-                onNavigateToLogin = {
-                    currentScreen = "login"
-                }
-            )
-        }
-
-        "home" -> {
-            HomeScreen(
-                questions = questions,
-                isLoading = isFeedLoading,
-                savedPostIds = savedPostIds,
-                onQuestionClick = { questionId ->
-                    selectedQuestion = questions.find { it.id == questionId }
-                    refreshReplies(questionId)
-                    currentScreen = "post"
-                },
-                onUpvoteClick = { questionId ->
-                    scope.launch {
-                        postRepository.votePost(questionId)
-                        refreshQuestions()
-                    }
-                },
-                onBookmarkClick = { questionId ->
-                    toggleBookmark(questionId)
-                },
-                onNavDestinationSelected = { destination ->
-                    when (destination) {
-                        BottomNavDestination.HOME -> currentScreen = "home"
-                        BottomNavDestination.SEARCH -> currentScreen = "search"
-                        BottomNavDestination.PROFILE -> currentScreen = "profile"
-                        BottomNavDestination.ADD_POST -> currentScreen = "add_post"
-                    }
-                }
-            )
-        }
-
-        "search" -> {
-            SearchPage(
-                questions = questions,
-                savedPostIds = savedPostIds,
-                onQuestionClick = { questionId ->
-                    selectedQuestion = questions.find { it.id == questionId }
-                    refreshReplies(questionId)
-                    currentScreen = "post"
-                },
-                onUpvoteClick = { questionId ->
-                    scope.launch {
-                        postRepository.votePost(questionId)
-                        refreshQuestions()
-                    }
-                },
-                onBookmarkClick = { questionId ->
-                    toggleBookmark(questionId)
-                },
-                onNavDestinationSelected = { destination ->
-                    when (destination) {
-                        BottomNavDestination.HOME -> currentScreen = "home"
-                        BottomNavDestination.SEARCH -> currentScreen = "search"
-                        BottomNavDestination.PROFILE -> currentScreen = "profile"
-                        BottomNavDestination.ADD_POST -> currentScreen = "add_post"
-                    }
-                }
-            )
-        }
-
-        "post" -> {
-            selectedQuestion?.let { question ->
-                PostDetailPage(
-                    question = question,
-                    replies = replies,
-                    isBookmarked = savedPostIds.contains(question.id),
-                    onBackClick = {
-                        currentScreen = "home"
-                    },
-                    onUpvoteClick = {
-                        scope.launch {
-                            postRepository.votePost(question.id)
+                "login" -> {
+                    LoginPage(
+                        authRepository = authRepository,
+                        onBackClick = { currentScreen = "landing" },
+                        onLoginSuccess = {
                             refreshQuestions()
-                        }
-                    },
-                    onBookmarkClick = { questionId ->
-                        toggleBookmark(questionId)
-                    },
-                    onSubmitReply = { text, onResult ->
-                        scope.launch {
-                            val result = postRepository.createReply(question.id, text)
-                            if (result.isSuccess) {
-                                refreshReplies(question.id)
-                                refreshQuestions()
-                                onResult(null)
-                            } else {
-                                onResult(
-                                    result.exceptionOrNull()?.localizedMessage
-                                        ?: "Failed to post answer to database."
-                                )
+                            refreshSavedPosts()
+                            currentScreen = "home"
+                        },
+                        onNavigateToSignUp = { currentScreen = "signup" }
+                    )
+                }
+
+                "signup" -> {
+                    SignUpPage(
+                        authRepository = authRepository,
+                        onBackClick = { currentScreen = "landing" },
+                        onSignUpSuccess = {
+                            refreshQuestions()
+                            refreshSavedPosts()
+                            currentScreen = "home"
+                        },
+                        onNavigateToLogin = { currentScreen = "login" }
+                    )
+                }
+
+                "home" -> {
+                    HomeScreen(
+                        questions = questions,
+                        isLoading = isFeedLoading,
+                        savedPostIds = savedPostIds,
+                        onQuestionClick = { questionId ->
+                            selectedQuestion = questions.find { it.id == questionId }
+                            refreshReplies(questionId)
+                            currentScreen = "post"
+                        },
+                        onUpvoteClick = { questionId -> handleUpvote(questionId) },
+                        onDownvoteClick = { questionId -> handleDownvote(questionId) },
+                        onBookmarkClick = { questionId -> toggleBookmark(questionId) },
+                        onNavDestinationSelected = { destination ->
+                            when (destination) {
+                                BottomNavDestination.HOME -> currentScreen = "home"
+                                BottomNavDestination.SEARCH -> currentScreen = "search"
+                                BottomNavDestination.PROFILE -> currentScreen = "profile"
+                                BottomNavDestination.ADD_POST -> currentScreen = "add_post"
                             }
                         }
-                    },
-                    onNavDestinationSelected = { destination ->
-                        when (destination) {
-                            BottomNavDestination.HOME -> currentScreen = "home"
-                            BottomNavDestination.SEARCH -> currentScreen = "search"
-                            BottomNavDestination.PROFILE -> currentScreen = "profile"
-                            BottomNavDestination.ADD_POST -> currentScreen = "add_post"
+                    )
+                }
+
+                "search" -> {
+                    SearchPage(
+                        questions = questions,
+                        savedPostIds = savedPostIds,
+                        onQuestionClick = { questionId ->
+                            selectedQuestion = questions.find { it.id == questionId }
+                            refreshReplies(questionId)
+                            currentScreen = "post"
+                        },
+                        onUpvoteClick = { questionId -> handleUpvote(questionId) },
+                        onBookmarkClick = { questionId -> toggleBookmark(questionId) },
+                        onNavDestinationSelected = { destination ->
+                            when (destination) {
+                                BottomNavDestination.HOME -> currentScreen = "home"
+                                BottomNavDestination.SEARCH -> currentScreen = "search"
+                                BottomNavDestination.PROFILE -> currentScreen = "profile"
+                                BottomNavDestination.ADD_POST -> currentScreen = "add_post"
+                            }
                         }
+                    )
+                }
+
+                "post" -> {
+                    selectedQuestion?.let { question ->
+                        PostDetailPage(
+                            question = question,
+                            replies = replies,
+                            isBookmarked = savedPostIds.contains(question.id),
+                            onBackClick = { currentScreen = "home" },
+                            onUpvoteClick = { handleUpvote(question.id) },
+                            onDownvoteClick = { handleDownvote(question.id) },
+                            onBookmarkClick = { questionId -> toggleBookmark(questionId) },
+                            onSubmitReply = { text, onResult ->
+                                scope.launch {
+                                    val result = postRepository.createReply(question.id, text)
+                                    if (result.isSuccess) {
+                                        refreshReplies(question.id)
+                                        refreshQuestions()
+                                        onResult(null)
+                                    } else {
+                                        onResult(
+                                            result.exceptionOrNull()?.localizedMessage
+                                                ?: "Failed to post answer to database."
+                                        )
+                                    }
+                                }
+                            },
+                            onNavDestinationSelected = { destination ->
+                                when (destination) {
+                                    BottomNavDestination.HOME -> currentScreen = "home"
+                                    BottomNavDestination.SEARCH -> currentScreen = "search"
+                                    BottomNavDestination.PROFILE -> currentScreen = "profile"
+                                    BottomNavDestination.ADD_POST -> currentScreen = "add_post"
+                                }
+                            }
+                        )
                     }
-                )
+                }
+
+                "profile" -> {
+                    ProfileScreen(
+                        authRepository = authRepository,
+                        profileRepository = profileRepository,
+                        savedCount = savedPostIds.size,
+                        onSavedPostsClick = {
+                            refreshSavedPosts()
+                            currentScreen = "saved_posts"
+                        },
+                        onLogOutClick = { currentScreen = "landing" },
+                        onNavDestinationSelected = { destination ->
+                            when (destination) {
+                                BottomNavDestination.HOME -> currentScreen = "home"
+                                BottomNavDestination.SEARCH -> currentScreen = "search"
+                                BottomNavDestination.PROFILE -> currentScreen = "profile"
+                                BottomNavDestination.ADD_POST -> currentScreen = "add_post"
+                            }
+                        }
+                    )
+                }
+
+                "saved_posts" -> {
+                    SavedPostsPage(
+                        savedQuestions = savedQuestions,
+                        savedPostIds = savedPostIds,
+                        isLoading = isSavedLoading,
+                        onQuestionClick = { questionId ->
+                            selectedQuestion = questions.find { it.id == questionId }
+                                ?: savedQuestions.find { it.id == questionId }
+                            if (selectedQuestion != null) {
+                                refreshReplies(questionId)
+                                currentScreen = "post"
+                            }
+                        },
+                        onUpvoteClick = { questionId -> handleUpvote(questionId) },
+                        onBookmarkClick = { questionId -> toggleBookmark(questionId) },
+                        onBackClick = { currentScreen = "profile" },
+                        onNavDestinationSelected = { destination ->
+                            when (destination) {
+                                BottomNavDestination.HOME -> currentScreen = "home"
+                                BottomNavDestination.SEARCH -> currentScreen = "search"
+                                BottomNavDestination.PROFILE -> currentScreen = "profile"
+                                BottomNavDestination.ADD_POST -> currentScreen = "add_post"
+                            }
+                        }
+                    )
+                }
+
+                "add_post" -> {
+                    AddPostScreen(
+                        postRepository = postRepository,
+                        onBack = { currentScreen = "home" },
+                        onPosted = {
+                            refreshQuestions()
+                            currentScreen = "home"
+                        }
+                    )
+                }
             }
         }
-
-        "profile" -> {
-            ProfileScreen(
-                authRepository = authRepository,
-                profileRepository = profileRepository,
-                savedCount = savedPostIds.size,
-                onSavedPostsClick = {
-                    refreshSavedPosts()
-                    currentScreen = "saved_posts"
-                },
-                onLogOutClick = {
-                    currentScreen = "landing"
-                },
-                onNavDestinationSelected = { destination ->
-                    when (destination) {
-                        BottomNavDestination.HOME -> currentScreen = "home"
-                        BottomNavDestination.SEARCH -> currentScreen = "search"
-                        BottomNavDestination.PROFILE -> currentScreen = "profile"
-                        BottomNavDestination.ADD_POST -> currentScreen = "add_post"
-                    }
-                }
-            )
-        }
-
-        "saved_posts" -> {
-            SavedPostsPage(
-                savedQuestions = savedQuestions,
-                savedPostIds = savedPostIds,
-                isLoading = isSavedLoading,
-                onQuestionClick = { questionId ->
-                    selectedQuestion = questions.find { it.id == questionId } ?: savedQuestions.find { it.id == questionId }
-                    if (selectedQuestion != null) {
-                        refreshReplies(questionId)
-                        currentScreen = "post"
-                    }
-                },
-                onUpvoteClick = { questionId ->
-                    scope.launch {
-                        postRepository.votePost(questionId)
-                        refreshQuestions()
-                        refreshSavedPosts()
-                    }
-                },
-                onBookmarkClick = { questionId ->
-                    toggleBookmark(questionId)
-                },
-                onBackClick = {
-                    currentScreen = "profile"
-                },
-                onNavDestinationSelected = { destination ->
-                    when (destination) {
-                        BottomNavDestination.HOME -> currentScreen = "home"
-                        BottomNavDestination.SEARCH -> currentScreen = "search"
-                        BottomNavDestination.PROFILE -> currentScreen = "profile"
-                        BottomNavDestination.ADD_POST -> currentScreen = "add_post"
-                    }
-                }
-            )
-        }
-
-        "add_post" -> {
-            AddPostScreen(
-                postRepository = postRepository,
-                onBack = {
-                    currentScreen = "home"
-                },
-                onPosted = {
-                    refreshQuestions()
-                    currentScreen = "home"
-                }
-            )
-        }
-    }
-}
 
         OfflineSystemBanner(
             isOffline = isOffline,

@@ -1,22 +1,25 @@
 package com.MADproject.quoraforuniversities
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.ThumbDown
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -44,11 +47,11 @@ fun PostDetailPage(
     isBookmarked: Boolean = false,
     onBackClick: () -> Unit = {},
     onUpvoteClick: () -> Unit = {},
+    onDownvoteClick: () -> Unit = {},
     onBookmarkClick: ((String) -> Unit)? = null,
     onSubmitReply: (text: String, onResult: (String?) -> Unit) -> Unit = { _, _ -> },
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
 ) {
-
     var replyText by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
     var replyError by remember { mutableStateOf<String?>(null) }
@@ -57,7 +60,7 @@ fun PostDetailPage(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            AppHeader(subtitle = "Question Details")
+            AppHeader(subtitle = "Question Details", onBackClick = onBackClick)
         },
         bottomBar = {
             BottomNavBar(
@@ -66,56 +69,36 @@ fun PostDetailPage(
             )
         }
     ) { innerPadding ->
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-
-            // CONTENT
-
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-
-                // FULL QUESTION
-
+                // FULL QUESTION CARD
                 item {
-
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                     ) {
-
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(16.dp)
                         ) {
-
-                            // AUTHOR
-
                             Text(
-                                text = if (question.isAnonymous)
-                                    "Anonymous"
-                                else
-                                    question.authorName,
+                                text = if (question.isAnonymous) "Anonymous" else question.authorName,
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
 
-                            Spacer(
-                                modifier = Modifier.height(12.dp)
-                            )
-
-                            // TITLE
+                            Spacer(modifier = Modifier.height(12.dp))
 
                             Text(
                                 text = question.title,
@@ -124,11 +107,7 @@ fun PostDetailPage(
                                 lineHeight = 29.sp
                             )
 
-                            Spacer(
-                                modifier = Modifier.height(12.dp)
-                            )
-
-                            // FULL BODY
+                            Spacer(modifier = Modifier.height(12.dp))
 
                             Text(
                                 text = question.body,
@@ -137,85 +116,93 @@ fun PostDetailPage(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
 
-                            Spacer(
-                                modifier = Modifier.height(14.dp)
-                            )
-
-                            // TAGS
-
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-
-                                question.tags.forEach { tag ->
-
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant
-                                    ) {
-
-                                        Text(
-                                            text = tag,
-                                            fontSize = 12.sp,
-                                            modifier = Modifier.padding(
-                                                horizontal = 9.dp,
-                                                vertical = 5.dp
+                            if (question.tags.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    question.tags.forEach { tag ->
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant
+                                        ) {
+                                            Text(
+                                                text = tag,
+                                                fontSize = 12.sp,
+                                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
                                             )
-                                        )
+                                        }
                                     }
                                 }
                             }
 
-                            Spacer(
-                                modifier = Modifier.height(16.dp)
-                            )
-
+                            Spacer(modifier = Modifier.height(16.dp))
                             HorizontalDivider()
+                            Spacer(modifier = Modifier.height(10.dp))
 
-                            Spacer(
-                                modifier = Modifier.height(10.dp)
-                            )
-
-                            // VOTE / ANSWER / SAVE ROW
-
+                            // SEPARATE UPVOTE / DOWNVOTE / ANSWERS / BOOKMARK ROW
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-
-                                    IconButton(
-                                        onClick = onUpvoteClick
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    // UPVOTE
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .clickable { onUpvoteClick() }
+                                            .padding(horizontal = 4.dp, vertical = 4.dp)
                                     ) {
-
                                         Icon(
-                                            imageVector = Icons.Default.ThumbUp,
-                                            contentDescription = "Upvote"
+                                            imageVector = if (question.currentUserVote == 1) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                                            contentDescription = "Upvote",
+                                            modifier = Modifier.size(18.dp),
+                                            tint = if (question.currentUserVote == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = question.upvoteCount.toString(),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = if (question.currentUserVote == 1) FontWeight.Bold else FontWeight.SemiBold,
+                                            color = if (question.currentUserVote == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+
+                                    // DOWNVOTE
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .clickable { onDownvoteClick() }
+                                            .padding(horizontal = 4.dp, vertical = 4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (question.currentUserVote == -1) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
+                                            contentDescription = "Downvote",
+                                            modifier = Modifier.size(18.dp),
+                                            tint = if (question.currentUserVote == -1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = question.downvoteCount.toString(),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = if (question.currentUserVote == -1) FontWeight.Bold else FontWeight.SemiBold,
+                                            color = if (question.currentUserVote == -1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
 
                                     Text(
-                                        text = question.voteCount.toString(),
-                                        fontSize = 14.sp
-                                    )
-
-                                    Spacer(
-                                        modifier = Modifier.width(20.dp)
-                                    )
-
-                                    Text(
                                         text = "${replies.size} Answers",
-                                        fontSize = 14.sp,
+                                        fontSize = 13.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
 
                                 if (onBookmarkClick != null) {
-                                    IconButton(
-                                        onClick = { onBookmarkClick(question.id) }
-                                    ) {
+                                    IconButton(onClick = { onBookmarkClick(question.id) }) {
                                         Icon(
                                             imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
                                             contentDescription = if (isBookmarked) "Unsave" else "Save",
@@ -228,10 +215,8 @@ fun PostDetailPage(
                     }
                 }
 
-                // ANSWERS TITLE
-
+                // ANSWERS HEADER
                 item {
-
                     Text(
                         text = "${replies.size} Answers",
                         fontSize = 20.sp,
@@ -239,21 +224,13 @@ fun PostDetailPage(
                     )
                 }
 
-                // REPLIES
-
-                items(
-                    replies,
-                    key = { it.id }
-                ) { reply ->
-
-                    ReplyCard(
-                        reply = reply
-                    )
+                // REPLIES LIST
+                items(replies, key = { it.id }) { reply ->
+                    ReplyCard(reply = reply)
                 }
             }
 
-            // WRITE ANSWER
-
+            // WRITE ANSWER BOX
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -299,9 +276,7 @@ fun PostDetailPage(
                             },
                             enabled = !isSubmitting,
                             modifier = Modifier.weight(1f),
-                            placeholder = {
-                                Text("Write an answer...")
-                            },
+                            placeholder = { Text("Write an answer...") },
                             maxLines = 3,
                             shape = RoundedCornerShape(12.dp)
                         )
@@ -343,15 +318,9 @@ fun PostDetailPage(
                             }
                         ) {
                             if (isSubmitting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp
-                                )
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                             } else {
-                                Icon(
-                                    imageVector = Icons.Default.Send,
-                                    contentDescription = "Send"
-                                )
+                                Icon(imageVector = Icons.Default.Send, contentDescription = "Send")
                             }
                         }
                     }
@@ -361,31 +330,19 @@ fun PostDetailPage(
     }
 }
 
-
-// ------------------------------------------------------------
-// REPLY CARD
-// ------------------------------------------------------------
-
 @Composable
-fun ReplyCard(
-    reply: ReplyUiModel
-) {
-
+fun ReplyCard(reply: ReplyUiModel) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(15.dp)
         ) {
-
             Text(
                 text = reply.authorName,
                 fontSize = 13.sp,
@@ -393,9 +350,7 @@ fun ReplyCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(
-                modifier = Modifier.height(8.dp)
-            )
+            Spacer(modifier = Modifier.height(8.dp))
 
             Text(
                 text = reply.body,
@@ -403,25 +358,16 @@ fun ReplyCard(
                 lineHeight = 21.sp
             )
 
-            Spacer(
-                modifier = Modifier.height(10.dp)
-            )
+            Spacer(modifier = Modifier.height(10.dp))
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.ThumbUp,
                     contentDescription = "Votes",
                     modifier = Modifier.size(17.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-
-                Spacer(
-                    modifier = Modifier.width(5.dp)
-                )
-
+                Spacer(modifier = Modifier.width(5.dp))
                 Text(
                     text = reply.voteCount.toString(),
                     fontSize = 12.sp,
@@ -433,51 +379,37 @@ fun ReplyCard(
 }
 
 private val sampleReplies = listOf(
-
     ReplyUiModel(
         id = "1",
         authorName = "Riya Sharma",
         body = "You should be able to add the backlog course during the registration period. Check with your department coordinator if it doesn't appear.",
         voteCount = 8
     ),
-
     ReplyUiModel(
         id = "2",
         authorName = "Anonymous",
         body = "I had the same issue last semester. You need to select the backlog course separately before submitting your timetable.",
         voteCount = 5
-    ),
-
-    ReplyUiModel(
-        id = "3",
-        authorName = "Arjun Patel",
-        body = "Also make sure that the course doesn't clash with your current timetable.",
-        voteCount = 3
     )
 )
 
-@Preview(
-    showBackground = true,
-    showSystemUi = true
-)
+@Preview(showBackground = true)
 @Composable
 private fun PostDetailPagePreview() {
     val question = QuestionUiModel(
         id = "1",
         title = "How do I add a backlog course to my timetable?",
-        body = "I failed one course last semester and need to retake it alongside my current courses. Not sure how registration handles this.",
+        body = "I failed one course last semester and need to retake it alongside my current courses.",
         authorName = "Anonymous",
         isAnonymous = true,
         tags = listOf("CSE", "Year2", "Registration"),
         voteCount = 12,
-        answerCount = 4
+        answerCount = 2,
+        upvoteCount = 12,
+        downvoteCount = 0
     )
 
     CampusQnATheme {
-
-        PostDetailPage(
-            question = question,
-            replies = sampleReplies
-        )
+        PostDetailPage(question = question, replies = sampleReplies)
     }
 }

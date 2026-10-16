@@ -27,6 +27,7 @@ fun HomeScreen(
     savedPostIds: Set<String> = emptySet(),
     onQuestionClick: (String) -> Unit = {},
     onUpvoteClick: (String) -> Unit = {},
+    onDownvoteClick: (String) -> Unit = {},
     onBookmarkClick: ((String) -> Unit)? = null,
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {},
 ) {
@@ -70,6 +71,7 @@ fun HomeScreen(
                                 question = question,
                                 onClick = onQuestionClick,
                                 onUpvoteClick = onUpvoteClick,
+                                onDownvoteClick = onDownvoteClick,
                                 onBookmarkClick = onBookmarkClick,
                                 isBookmarked = savedPostIds.contains(question.id)
                             )

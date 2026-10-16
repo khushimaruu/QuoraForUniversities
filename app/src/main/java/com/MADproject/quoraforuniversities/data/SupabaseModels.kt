@@ -83,7 +83,7 @@ data class VoteDto(
     @SerialName("user_id") val userId: String? = null,
     @SerialName("post_id") val postId: String? = null,
     @SerialName("reply_id") val replyId: String? = null,
-    @SerialName("vote_type") val voteType: String = "upvote",
+    @SerialName("vote_type") val voteType: Int = 1,
     @SerialName("created_at") val createdAt: String? = null
 )
 
@@ -92,7 +92,7 @@ data class CreateVoteDto(
     @SerialName("user_id") val userId: String,
     @SerialName("post_id") val postId: String? = null,
     @SerialName("reply_id") val replyId: String? = null,
-    @SerialName("vote_type") val voteType: String = "upvote"
+    @SerialName("vote_type") val voteType: Int = 1
 )
 
 @Serializable
@@ -112,7 +112,10 @@ data class CreateBookmarkDto(
 fun PostDto.toUiModel(
     authorName: String = "Anonymous",
     voteCount: Int = 0,
-    answerCount: Int = 0
+    answerCount: Int = 0,
+    upvoteCount: Int = voteCount,
+    downvoteCount: Int = 0,
+    currentUserVote: Int = 0
 ): QuestionUiModel {
     val tagsList = if (theme.isNotBlank()) {
         theme.split(",").map { it.trim() }.filter { it.isNotEmpty() }
@@ -126,13 +129,19 @@ fun PostDto.toUiModel(
         isAnonymous = isAnonymous,
         tags = tagsList,
         voteCount = voteCount,
-        answerCount = answerCount
+        answerCount = answerCount,
+        upvoteCount = upvoteCount,
+        downvoteCount = downvoteCount,
+        currentUserVote = currentUserVote
     )
 }
 
 fun PostWithProfileDto.toUiModel(
     voteCount: Int = 0,
-    answerCount: Int = 0
+    answerCount: Int = 0,
+    upvoteCount: Int = voteCount,
+    downvoteCount: Int = 0,
+    currentUserVote: Int = 0
 ): QuestionUiModel {
     val tagsList = if (theme.isNotBlank()) {
         theme.split(",").map { it.trim() }.filter { it.isNotEmpty() }
@@ -152,9 +161,13 @@ fun PostWithProfileDto.toUiModel(
         isAnonymous = isAnonymous,
         tags = tagsList,
         voteCount = voteCount,
-        answerCount = answerCount
+        answerCount = answerCount,
+        upvoteCount = upvoteCount,
+        downvoteCount = downvoteCount,
+        currentUserVote = currentUserVote
     )
 }
+
 
 fun ReplyDto.toUiModel(
     authorName: String = "Anonymous",

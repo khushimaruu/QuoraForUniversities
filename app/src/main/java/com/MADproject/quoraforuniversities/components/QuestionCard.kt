@@ -7,9 +7,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.ThumbDown
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -21,20 +24,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
-/** Plain UI-layer model — map your Supabase row into this before rendering. */
+/** Plain UI-layer model */
 data class QuestionUiModel(
     val id: String,
     val title: String,
     val body: String,
-    val authorName: String,      // "Anonymous" if posted anonymously
+    val authorName: String,
     val isAnonymous: Boolean,
     val tags: List<String>,
-    val voteCount: Int,
-    val answerCount: Int,
+    val voteCount: Int = 0,
+    val answerCount: Int = 0,
+    val upvoteCount: Int = voteCount,
+    val downvoteCount: Int = 0,
+    val currentUserVote: Int = 0// "upvote", "downvote", or null
 )
 
 /**
- * Reusable post card. Used on Home, Search results, Profile, and Saved Posts.
+ * Reusable post card with separate Like and Dislike counters.
  */
 @Composable
 fun QuestionCard(
@@ -42,6 +48,7 @@ fun QuestionCard(
     onClick: (String) -> Unit,
     onUpvoteClick: (String) -> Unit,
     modifier: Modifier = Modifier,
+    onDownvoteClick: ((String) -> Unit)? = null,
     onBookmarkClick: ((String) -> Unit)? = null,
     isBookmarked: Boolean = false
 ) {
@@ -143,31 +150,61 @@ fun QuestionCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 1.dp)
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Footer: votes + answers + save button
+            // Footer: Separate Upvote, Downvote, Answers, Bookmark
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // SEPARATE UPVOTE
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { onUpvoteClick(question.id) }
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onUpvoteClick(question.id) }
+                            .padding(horizontal = 4.dp, vertical = 4.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.ThumbUp,
+                            imageVector = if (question.currentUserVote == 1) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
                             contentDescription = "Upvote",
                             modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.secondary
+                            tint = if (question.currentUserVote == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
                         )
-                        Spacer(modifier = Modifier.width(5.dp))
                         Text(
-                            text = question.voteCount.toString(),
+                            text = question.upvoteCount.toString(),
                             style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = if (question.currentUserVote == 1) FontWeight.Bold else FontWeight.SemiBold,
+                            color = if (question.currentUserVote == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                         )
                     }
-                    Spacer(modifier = Modifier.width(18.dp))
+
+                    // SEPARATE DOWNVOTE
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onDownvoteClick?.invoke(question.id) }
+                            .padding(horizontal = 4.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (question.currentUserVote == -1) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
+                            contentDescription = "Downvote",
+                            modifier = Modifier.size(16.dp),
+                            tint = if (question.currentUserVote == -1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = question.downvoteCount.toString(),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (question.currentUserVote == -1) FontWeight.Bold else FontWeight.SemiBold,
+                            color = if (question.currentUserVote == -1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // ANSWERS COUNT
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Outlined.ChatBubbleOutline,
