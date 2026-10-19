@@ -32,19 +32,13 @@ import androidx.compose.ui.unit.sp
 import com.MADproject.quoraforuniversities.components.AppHeader
 import com.MADproject.quoraforuniversities.components.BottomNavBar
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
+import com.MADproject.quoraforuniversities.components.QuestionCard
+import com.MADproject.quoraforuniversities.components.QuestionUiModel
 import com.MADproject.quoraforuniversities.data.AuthRepository
 import com.MADproject.quoraforuniversities.data.ProfileDto
 import com.MADproject.quoraforuniversities.data.ProfileRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 import kotlinx.coroutines.launch
-
-data class UserPost(
-    val title: String,
-    val description: String,
-    val category: String,
-    val answers: Int,
-    val likes: Int
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +46,14 @@ fun ProfileScreen(
     authRepository: AuthRepository = remember { AuthRepository() },
     profileRepository: ProfileRepository = remember { ProfileRepository() },
     savedCount: Int = 0,
+    savedPostIds: Set<String> = emptySet(),
+    userPosts: List<QuestionUiModel> = emptyList(),
+    isLoadingPosts: Boolean = false,
+    onQuestionClick: (String) -> Unit = {},
+    onUpvoteClick: (String) -> Unit = {},
+    onDownvoteClick: (String) -> Unit = {},
+    onBookmarkClick: (String) -> Unit = {},
+    onReportClick: (String, String) -> Unit = { _, _ -> },
     onSavedPostsClick: () -> Unit = {},
     onLogOutClick: () -> Unit = {},
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
@@ -71,7 +73,10 @@ fun ProfileScreen(
         val uid = authRepository.getCurrentUserId()
         val email = authRepository.getCurrentUserEmail() ?: ""
         emailText = email
-        val fetched = profileRepository.getProfile(uid).getOrNull()
+        
+        // Fetch Profile
+        val fetchedResult = profileRepository.getProfile(uid)
+        val fetched = fetchedResult.getOrNull()
         profile = fetched ?: ProfileDto(
             id = uid ?: "",
             username = email.substringBefore("@").ifBlank { "student" },
@@ -97,25 +102,6 @@ fun ProfileScreen(
             profileBitmap = BitmapFactory.decodeStream(inputStream)
             inputStream?.close()
         }
-    }
-
-    val posts = remember {
-        listOf(
-            UserPost(
-                title = "How do I add a backlog course to my timetable?",
-                description = "I failed one course last semester and need to retake it alongside my current courses.",
-                category = "Registration",
-                answers = 4,
-                likes = 12
-            ),
-            UserPost(
-                title = "Best cafes near the north campus for group study?",
-                description = "Looking for a place with decent wifi and enough seating for 4-5 people.",
-                category = "Campus Life",
-                answers = 9,
-                likes = 27
-            )
-        )
     }
 
     Scaffold(
@@ -355,7 +341,7 @@ fun ProfileScreen(
 
                 Spacer(modifier = Modifier.height(25.dp))
 
-                // ---------------- POSTS ----------------
+                // ---------------- POSTS HEADER ----------------
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -367,18 +353,36 @@ fun ProfileScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "(${posts.size})",
+                        text = "(${userPosts.size})",
                         fontSize = 15.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
+                
+                if (isLoadingPosts) {
+                    CircularProgressIndicator(modifier = Modifier.padding(20.dp))
+                } else if (userPosts.isEmpty()) {
+                    Text(
+                        text = "You haven't posted anything yet.",
+                        modifier = Modifier.padding(20.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
-            // ---------------- POST CARDS ----------------
-            items(posts) { post ->
-                PostCard(post)
+            // ---------------- USER POST CARDS ----------------
+            items(userPosts, key = { it.id }) { post ->
+                QuestionCard(
+                    question = post,
+                    onClick = onQuestionClick,
+                    onUpvoteClick = onUpvoteClick,
+                    onDownvoteClick = onDownvoteClick,
+                    onBookmarkClick = onBookmarkClick,
+                    onReportClick = onReportClick,
+                    isBookmarked = savedPostIds.contains(post.id)
+                )
                 Spacer(modifier = Modifier.height(14.dp))
             }
 
@@ -504,59 +508,5 @@ fun ProfileField(
             fontSize = 15.sp,
             color = MaterialTheme.colorScheme.onSurface
         )
-    }
-}
-
-@Composable
-fun PostCard(post: UserPost) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(15.dp)
-        ) {
-            Text(
-                text = post.title,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(7.dp))
-            Text(
-                text = post.description,
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 18.sp
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            Surface(
-                shape = RoundedCornerShape(5.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant
-            ) {
-                Text(
-                    text = post.category,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "♥ ${post.likes}",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.width(15.dp))
-                Text(
-                    text = "${post.answers} answers",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
     }
 }

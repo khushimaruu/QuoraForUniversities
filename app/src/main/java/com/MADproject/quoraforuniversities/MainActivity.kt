@@ -74,6 +74,9 @@ fun CampusQnAApp(
     var savedQuestions by remember { mutableStateOf<List<QuestionUiModel>>(emptyList()) }
     var isSavedLoading by remember { mutableStateOf(false) }
 
+    var userCreatedPosts by remember { mutableStateOf<List<QuestionUiModel>>(emptyList()) }
+    var isUserPostsLoading by remember { mutableStateOf(false) }
+
     fun refreshSavedPosts() {
         scope.launch {
             if (savedQuestions.isEmpty()) {
@@ -85,6 +88,18 @@ fun CampusQnAApp(
             isSavedLoading = false
             if (res.isSuccess) {
                 savedQuestions = res.getOrDefault(emptyList())
+            }
+        }
+    }
+
+    fun refreshUserPosts() {
+        scope.launch {
+            val uid = authRepository.getCurrentUserId() ?: return@launch
+            isUserPostsLoading = true
+            val res = profileRepository.getUserPosts(uid)
+            isUserPostsLoading = false
+            if (res.isSuccess) {
+                userCreatedPosts = res.getOrDefault(emptyList())
             }
         }
     }
@@ -129,12 +144,18 @@ fun CampusQnAApp(
         }
     }
 
-    // INSTANT UPVOTE: Updates UI numbers on all active screens immediately and saves to DB
+    // INSTANT UPVOTE: Updates UI numbers on all active screens immediately and commits to Supabase
     fun handleUpvote(questionId: String) {
         val updateLogic: (QuestionUiModel) -> QuestionUiModel = { q ->
             if (q.id == questionId) {
                 if (q.currentUserVote == 1) {
-                    q // Already liked
+                    // Toggle OFF
+                    val newUp = (q.upvoteCount - 1).coerceAtLeast(0)
+                    q.copy(
+                        upvoteCount = newUp,
+                        voteCount = newUp - q.downvoteCount,
+                        currentUserVote = 0
+                    )
                 } else {
                     val newUp = q.upvoteCount + 1
                     val newDown = if (q.currentUserVote == -1) (q.downvoteCount - 1).coerceAtLeast(0) else q.downvoteCount
@@ -148,24 +169,37 @@ fun CampusQnAApp(
             } else q
         }
 
+        // Apply immediately to current view state
         questions = questions.map(updateLogic)
         selectedQuestion = selectedQuestion?.let(updateLogic)
         savedQuestions = savedQuestions.map(updateLogic)
+        userCreatedPosts = userCreatedPosts.map(updateLogic)
 
         scope.launch {
             val result = postRepository.votePost(questionId, 1)
             if (result.isSuccess) {
+                // Brief stabilization pause to ensure Supabase Postgres commit completes before re-fetching
+                delay(400)
+                refreshQuestions()
+            } else {
+                // Rollback to actual DB state on network or DB failure
                 refreshQuestions()
             }
         }
     }
 
-    // INSTANT DOWNVOTE: Updates UI numbers on all active screens immediately and saves to DB
+    // INSTANT DOWNVOTE: Updates UI numbers on all active screens immediately and commits to Supabase
     fun handleDownvote(questionId: String) {
         val updateLogic: (QuestionUiModel) -> QuestionUiModel = { q ->
             if (q.id == questionId) {
                 if (q.currentUserVote == -1) {
-                    q // Already disliked
+                    // Toggle OFF
+                    val newDown = (q.downvoteCount - 1).coerceAtLeast(0)
+                    q.copy(
+                        downvoteCount = newDown,
+                        voteCount = q.upvoteCount - newDown,
+                        currentUserVote = 0
+                    )
                 } else {
                     val newDown = q.downvoteCount + 1
                     val newUp = if (q.currentUserVote == 1) (q.upvoteCount - 1).coerceAtLeast(0) else q.upvoteCount
@@ -179,13 +213,18 @@ fun CampusQnAApp(
             } else q
         }
 
+        // Apply immediately to current view state
         questions = questions.map(updateLogic)
         selectedQuestion = selectedQuestion?.let(updateLogic)
         savedQuestions = savedQuestions.map(updateLogic)
+        userCreatedPosts = userCreatedPosts.map(updateLogic)
 
         scope.launch {
             val result = postRepository.votePost(questionId, -1)
             if (result.isSuccess) {
+                delay(400)
+                refreshQuestions()
+            } else {
                 refreshQuestions()
             }
         }
@@ -194,7 +233,9 @@ fun CampusQnAApp(
     // COMMUNITY REPORTING: Soft-hides post immediately for reporter and records in DB
     fun handleReportPost(postId: String, reason: String) {
         val currentUserId = authRepository.getCurrentUserId()
-        val targetPost = questions.find { it.id == postId } ?: savedQuestions.find { it.id == postId }
+        val targetPost = questions.find { it.id == postId }
+            ?: savedQuestions.find { it.id == postId }
+            ?: userCreatedPosts.find { it.id == postId }
 
         if (targetPost != null && targetPost.authorId == currentUserId && currentUserId != null) {
             scope.launch {
@@ -209,6 +250,7 @@ fun CampusQnAApp(
         // Instantly soft-hide post on client side for the reporting student
         questions = questions.filter { it.id != postId }
         savedQuestions = savedQuestions.filter { it.id != postId }
+        userCreatedPosts = userCreatedPosts.filter { it.id != postId }
         if (selectedQuestion?.id == postId) {
             selectedQuestion = null
             currentScreen = "home"
@@ -239,6 +281,7 @@ fun CampusQnAApp(
         refreshQuestions()
         if (authRepository.isLoggedIn()) {
             refreshSavedPosts()
+            refreshUserPosts()
         }
         delay(1200)
         currentScreen = if (authRepository.isLoggedIn()) "home" else "landing"
@@ -290,6 +333,7 @@ fun CampusQnAApp(
                             onLoginSuccess = {
                                 refreshQuestions()
                                 refreshSavedPosts()
+                                refreshUserPosts()
                                 currentScreen = "home"
                             },
                             onNavigateToSignUp = { currentScreen = "signup" }
@@ -303,6 +347,7 @@ fun CampusQnAApp(
                             onSignUpSuccess = {
                                 refreshQuestions()
                                 refreshSavedPosts()
+                                refreshUserPosts()
                                 currentScreen = "home"
                             },
                             onNavigateToLogin = { currentScreen = "login" }
@@ -400,6 +445,22 @@ fun CampusQnAApp(
                             authRepository = authRepository,
                             profileRepository = profileRepository,
                             savedCount = savedPostIds.size,
+                            savedPostIds = savedPostIds,
+                            userPosts = userCreatedPosts,
+                            isLoadingPosts = isUserPostsLoading,
+                            onQuestionClick = { questionId ->
+                                selectedQuestion = questions.find { it.id == questionId }
+                                    ?: savedQuestions.find { it.id == questionId }
+                                            ?: userCreatedPosts.find { it.id == questionId }
+                                if (selectedQuestion != null) {
+                                    refreshReplies(questionId)
+                                    currentScreen = "post"
+                                }
+                            },
+                            onUpvoteClick = { handleUpvote(it) },
+                            onDownvoteClick = { handleDownvote(it) },
+                            onBookmarkClick = { toggleBookmark(it) },
+                            onReportClick = { id, reason -> handleReportPost(id, reason) },
                             onSavedPostsClick = {
                                 refreshSavedPosts()
                                 currentScreen = "saved_posts"
@@ -424,6 +485,7 @@ fun CampusQnAApp(
                             onQuestionClick = { questionId ->
                                 selectedQuestion = questions.find { it.id == questionId }
                                     ?: savedQuestions.find { it.id == questionId }
+                                            ?: userCreatedPosts.find { it.id == questionId }
                                 if (selectedQuestion != null) {
                                     refreshReplies(questionId)
                                     currentScreen = "post"
@@ -450,6 +512,7 @@ fun CampusQnAApp(
                             onBack = { currentScreen = "home" },
                             onPosted = {
                                 refreshQuestions()
+                                refreshUserPosts()
                                 currentScreen = "home"
                             }
                         )
