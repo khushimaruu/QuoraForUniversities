@@ -83,8 +83,21 @@ data class VoteDto(
     @SerialName("user_id") val userId: String? = null,
     @SerialName("post_id") val postId: String? = null,
     @SerialName("reply_id") val replyId: String? = null,
-    @SerialName("vote_type") val voteType: Int = 1,
+    @SerialName("vote_type") val voteType: Int,
     @SerialName("created_at") val createdAt: String? = null
+)
+
+@Serializable
+data class VoteMinimalDto(
+    @SerialName("id") val id: String? = null,
+    @SerialName("post_id") val postId: String? = null,
+    @SerialName("vote_type") val voteType: Int,
+    @SerialName("user_id") val userId: String? = null
+)
+
+@Serializable
+data class ReplyMinimalDto(
+    @SerialName("post_id") val postId: String = ""
 )
 
 @Serializable
@@ -92,7 +105,7 @@ data class CreateVoteDto(
     @SerialName("user_id") val userId: String,
     @SerialName("post_id") val postId: String? = null,
     @SerialName("reply_id") val replyId: String? = null,
-    @SerialName("vote_type") val voteType: Int = 1
+    @SerialName("vote_type") val voteType: Int
 )
 
 @Serializable
@@ -133,7 +146,7 @@ fun PostDto.toUiModel(
     authorName: String = "Anonymous",
     voteCount: Int = 0,
     answerCount: Int = 0,
-    upvoteCount: Int = voteCount,
+    upvoteCount: Int = 0,
     downvoteCount: Int = 0,
     currentUserVote: Int = 0
 ): QuestionUiModel {
@@ -160,7 +173,7 @@ fun PostDto.toUiModel(
 fun PostWithProfileDto.toUiModel(
     voteCount: Int = 0,
     answerCount: Int = 0,
-    upvoteCount: Int = voteCount,
+    upvoteCount: Int = 0,
     downvoteCount: Int = 0,
     currentUserVote: Int = 0
 ): QuestionUiModel {
