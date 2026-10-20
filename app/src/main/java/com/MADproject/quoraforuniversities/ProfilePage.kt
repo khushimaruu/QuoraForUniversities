@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -85,20 +86,22 @@ fun ProfileScreen(
         // Fetch Profile from Supabase
         val fetchedResult = profileRepository.getProfile(uid)
         val fetched = fetchedResult.getOrNull()
-        profile = fetched ?: ProfileDto(
-            id = uid ?: "",
-            username = email.substringBefore("@").ifBlank { "student" },
-            name = "Student"
-        )
-
-        // Load saved photo from avatarUrl if available
-        fetched?.avatarUrl?.let { avatarStr ->
-            if (avatarStr.isNotBlank()) {
-                val decodedBitmap = base64ToBitmap(avatarStr)
-                if (decodedBitmap != null) {
-                    profileBitmap = decodedBitmap
+        if (fetched != null) {
+            profile = fetched
+            fetched.avatarUrl?.let { avatarStr ->
+                if (avatarStr.isNotBlank()) {
+                    val decodedBitmap = base64ToBitmap(avatarStr)
+                    if (decodedBitmap != null) {
+                        profileBitmap = decodedBitmap
+                    }
                 }
             }
+        } else {
+            profile = ProfileDto(
+                id = uid ?: "",
+                username = email.substringBefore("@").ifBlank { "student" },
+                name = "Student"
+            )
         }
     }
 
@@ -123,8 +126,9 @@ fun ProfileScreen(
                 isUploadingPhoto = true
                 scope.launch {
                     val base64Photo = bitmapToBase64(originalBitmap)
+                    val uid = authRepository.getCurrentUserId() ?: ""
                     val currentProfile = profile ?: ProfileDto(
-                        id = authRepository.getCurrentUserId() ?: "",
+                        id = uid,
                         username = username,
                         name = name
                     )
@@ -133,6 +137,8 @@ fun ProfileScreen(
                     isUploadingPhoto = false
                     if (res.isSuccess) {
                         profile = updatedProfile
+                    } else {
+                        Log.e("ProfileScreen", "Failed to upload photo: ${res.exceptionOrNull()?.message}")
                     }
                 }
             }
@@ -502,16 +508,31 @@ fun ProfileScreen(
 
 // ---------------- HELPER FUNCTIONS FOR BITMAP <-> BASE64 ----------------
 private fun bitmapToBase64(bitmap: Bitmap): String {
+    val maxDimension = 300
+    val width = bitmap.width
+    val height = bitmap.height
+    val scaledBitmap = if (width > maxDimension || height > maxDimension) {
+        val ratio = width.toFloat() / height.toFloat()
+        val (targetW, targetH) = if (ratio > 1f) {
+            maxDimension to (maxDimension / ratio).toInt()
+        } else {
+            (maxDimension * ratio).toInt() to maxDimension
+        }
+        Bitmap.createScaledBitmap(bitmap, targetW.coerceAtLeast(1), targetH.coerceAtLeast(1), true)
+    } else {
+        bitmap
+    }
+
     val outputStream = ByteArrayOutputStream()
-    bitmap.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
+    scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
     val bytes = outputStream.toByteArray()
-    return Base64.encodeToString(bytes, Base64.DEFAULT)
+    return Base64.encodeToString(bytes, Base64.NO_WRAP)
 }
 
 private fun base64ToBitmap(base64Str: String): Bitmap? {
     return try {
         val cleanBase64 = base64Str.substringAfter(",")
-        val bytes = Base64.decode(cleanBase64, Base64.DEFAULT)
+        val bytes = Base64.decode(cleanBase64, Base64.NO_WRAP)
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
     } catch (e: Exception) {
         null

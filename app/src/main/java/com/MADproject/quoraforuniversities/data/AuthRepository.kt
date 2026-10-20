@@ -45,19 +45,32 @@ class AuthRepository {
                 email = emailVal
                 password = passwordVal
             }
-            // Ensure profile exists on sign in as well
+            // Ensure profile exists on sign in without overwriting existing bio/photo
             val user = auth.currentUserOrNull()
             val userId = user?.id
             if (userId != null) {
-                val email = user.email.orEmpty()
-                val username = email.substringBefore("@").ifBlank { "student" }
-                val profile = ProfileDto(
-                    id = userId,
-                    username = username,
-                    name = username.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
-                )
-                runCatching {
-                    SupabaseClient.client.from("profiles").upsert(profile)
+                val existingProfile = runCatching {
+                    SupabaseClient.client.from("profiles")
+                        .select {
+                            filter {
+                                eq("id", userId)
+                            }
+                        }
+                        .decodeList<ProfileDto>()
+                        .firstOrNull()
+                }.getOrNull()
+
+                if (existingProfile == null) {
+                    val email = user.email.orEmpty()
+                    val username = email.substringBefore("@").ifBlank { "student" }
+                    val profile = ProfileDto(
+                        id = userId,
+                        username = username,
+                        name = username.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+                    )
+                    runCatching {
+                        SupabaseClient.client.from("profiles").upsert(profile)
+                    }
                 }
             }
         }
@@ -70,14 +83,14 @@ class AuthRepository {
     }
 
     fun getCurrentUserId(): String? {
-        return auth.currentUserOrNull()?.id
+        return runCatching { auth.currentUserOrNull()?.id }.getOrNull()
     }
 
     fun getCurrentUserEmail(): String? {
-        return auth.currentUserOrNull()?.email
+        return runCatching { auth.currentUserOrNull()?.email }.getOrNull()
     }
 
     fun isLoggedIn(): Boolean {
-        return auth.currentSessionOrNull() != null
+        return runCatching { auth.currentSessionOrNull() != null }.getOrDefault(false)
     }
 }
