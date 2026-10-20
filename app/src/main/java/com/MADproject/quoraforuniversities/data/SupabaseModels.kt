@@ -46,6 +46,7 @@ data class ProfileDto(
     val name: String? = null,
     val gender: String? = null,
     val bio: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
     @SerialName("created_at") val createdAt: String? = null
 )
 

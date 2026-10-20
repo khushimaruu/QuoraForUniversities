@@ -1,7 +1,9 @@
 package com.MADproject.quoraforuniversities
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -15,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,6 +42,7 @@ import com.MADproject.quoraforuniversities.data.ProfileDto
 import com.MADproject.quoraforuniversities.data.ProfileRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,6 +68,10 @@ fun ProfileScreen(
     var profile by remember { mutableStateOf<ProfileDto?>(null) }
     var emailText by remember { mutableStateOf("") }
 
+    // Profile photo state
+    var profileBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var isUploadingPhoto by remember { mutableStateOf(false) }
+
     // Edit Bio Dialog State
     var showEditBioDialog by remember { mutableStateOf(false) }
     var editedBioText by remember { mutableStateOf("") }
@@ -74,7 +82,7 @@ fun ProfileScreen(
         val email = authRepository.getCurrentUserEmail() ?: ""
         emailText = email
         
-        // Fetch Profile
+        // Fetch Profile from Supabase
         val fetchedResult = profileRepository.getProfile(uid)
         val fetched = fetchedResult.getOrNull()
         profile = fetched ?: ProfileDto(
@@ -82,6 +90,16 @@ fun ProfileScreen(
             username = email.substringBefore("@").ifBlank { "student" },
             name = "Student"
         )
+
+        // Load saved photo from avatarUrl if available
+        fetched?.avatarUrl?.let { avatarStr ->
+            if (avatarStr.isNotBlank()) {
+                val decodedBitmap = base64ToBitmap(avatarStr)
+                if (decodedBitmap != null) {
+                    profileBitmap = decodedBitmap
+                }
+            }
+        }
     }
 
     val username = profile?.username ?: emailText.substringBefore("@").ifBlank { "student" }
@@ -92,15 +110,32 @@ fun ProfileScreen(
     val initialLetter = (if (name.isNotBlank()) name else username).firstOrNull()?.uppercase() ?: "U"
 
     // Profile photo picker
-    var profileBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let {
-            val inputStream = context.contentResolver.openInputStream(it)
-            profileBitmap = BitmapFactory.decodeStream(inputStream)
+        uri?.let { pickedUri ->
+            val inputStream = context.contentResolver.openInputStream(pickedUri)
+            val originalBitmap = BitmapFactory.decodeStream(inputStream)
             inputStream?.close()
+
+            if (originalBitmap != null) {
+                profileBitmap = originalBitmap
+                isUploadingPhoto = true
+                scope.launch {
+                    val base64Photo = bitmapToBase64(originalBitmap)
+                    val currentProfile = profile ?: ProfileDto(
+                        id = authRepository.getCurrentUserId() ?: "",
+                        username = username,
+                        name = name
+                    )
+                    val updatedProfile = currentProfile.copy(avatarUrl = base64Photo)
+                    val res = profileRepository.updateProfile(updatedProfile)
+                    isUploadingPhoto = false
+                    if (res.isSuccess) {
+                        profile = updatedProfile
+                    }
+                }
+            }
         }
     }
 
@@ -160,13 +195,25 @@ fun ProfileScreen(
                         }
                     }
 
+                    if (isUploadingPhoto) {
+                        Box(
+                            modifier = Modifier
+                                .size(120.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.4f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(32.dp))
+                        }
+                    }
+
                     // Camera button to change photo
                     Box(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
                             .background(Color(0xFF333333))
-                            .clickable {
+                            .clickable(enabled = !isUploadingPhoto) {
                                 imagePicker.launch("image/*")
                             },
                         contentAlignment = Alignment.Center
@@ -183,10 +230,10 @@ fun ProfileScreen(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "Change profile photo",
+                    text = if (isUploadingPhoto) "Saving photo to cloud..." else "Change profile photo",
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable {
+                    modifier = Modifier.clickable(enabled = !isUploadingPhoto) {
                         imagePicker.launch("image/*")
                     }
                 )
@@ -450,6 +497,24 @@ fun ProfileScreen(
             },
             shape = RoundedCornerShape(16.dp)
         )
+    }
+}
+
+// ---------------- HELPER FUNCTIONS FOR BITMAP <-> BASE64 ----------------
+private fun bitmapToBase64(bitmap: Bitmap): String {
+    val outputStream = ByteArrayOutputStream()
+    bitmap.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
+    val bytes = outputStream.toByteArray()
+    return Base64.encodeToString(bytes, Base64.DEFAULT)
+}
+
+private fun base64ToBitmap(base64Str: String): Bitmap? {
+    return try {
+        val cleanBase64 = base64Str.substringAfter(",")
+        val bytes = Base64.decode(cleanBase64, Base64.DEFAULT)
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    } catch (e: Exception) {
+        null
     }
 }
 
