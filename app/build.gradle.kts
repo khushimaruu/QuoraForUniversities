@@ -19,7 +19,6 @@ fun sanitizeProperty(value: String?): String {
 
 val supabaseUrl = sanitizeProperty(localProperties.getProperty("SUPABASE_URL"))
 val supabasePublishableKey = sanitizeProperty(localProperties.getProperty("SUPABASE_PUBLISHABLE_KEY"))
-val supabaseSecretKey = sanitizeProperty(localProperties.getProperty("SUPABASE_SECRET_KEY"))
 val supabaseJwksUrl = sanitizeProperty(localProperties.getProperty("SUPABASE_JWKS_URL"))
 val geminiApiKey = sanitizeProperty(localProperties.getProperty("GEMINI_API_KEY"))
 
@@ -40,7 +39,6 @@ android {
 
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"$supabasePublishableKey\"")
-        buildConfigField("String", "SUPABASE_SECRET_KEY", "\"$supabaseSecretKey\"")
         buildConfigField("String", "SUPABASE_JWKS_URL", "\"$supabaseJwksUrl\"")
         buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
     }
@@ -53,6 +51,7 @@ android {
         }
     }
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
@@ -63,6 +62,7 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

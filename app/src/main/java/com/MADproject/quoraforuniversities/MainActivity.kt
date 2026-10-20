@@ -21,6 +21,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -37,6 +38,7 @@ import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 import com.MADproject.quoraforuniversities.utils.ConnectivityStatus
 import com.MADproject.quoraforuniversities.utils.NetworkConnectivityObserver
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -66,10 +68,20 @@ fun CampusQnAApp(
     val isOffline = connectivityStatus == ConnectivityStatus.Lost || connectivityStatus == ConnectivityStatus.Unavailable
 
     var currentScreen by rememberSaveable { mutableStateOf("splash") }
+    var postReturnScreen by rememberSaveable { mutableStateOf("home") }
+    val listScreenState = rememberSaveableStateHolder()
+    // Search data outlives its AnimatedContent destination; only the query goes in saved state.
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf<List<QuestionUiModel>>(emptyList()) }
+    var isSearching by remember { mutableStateOf(searchQuery.isNotBlank()) }
+    var searchError by remember { mutableStateOf<String?>(null) }
+    var searchRefreshVersion by remember { mutableLongStateOf(0L) }
     var selectedQuestion by remember { mutableStateOf<QuestionUiModel?>(null) }
     var questions by remember { mutableStateOf<List<QuestionUiModel>>(emptyList()) }
     var isFeedLoading by remember { mutableStateOf(false) }
     var replies by remember { mutableStateOf<List<ReplyUiModel>>(emptyList()) }
+    var repliesForPostId by remember { mutableStateOf<String?>(null) }
+    var repliesRequestVersion by remember { mutableLongStateOf(0L) }
     var savedPostIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var savedQuestions by remember { mutableStateOf<List<QuestionUiModel>>(emptyList()) }
     var isSavedLoading by remember { mutableStateOf(false) }
@@ -125,6 +137,8 @@ fun CampusQnAApp(
             if (result.isSuccess) {
                 val updatedList = result.getOrDefault(emptyList())
                 questions = updatedList
+                // Refresh cached search data after real feed changes, never just on returning.
+                searchRefreshVersion++
                 selectedQuestion?.let { currentSq ->
                     val updatedSq = updatedList.find { it.id == currentSq.id }
                     if (updatedSq != null) {
@@ -136,9 +150,14 @@ fun CampusQnAApp(
     }
 
     fun refreshReplies(postId: String) {
+        val requestVersion = ++repliesRequestVersion
+        if (repliesForPostId != postId) {
+            replies = emptyList()
+            repliesForPostId = postId
+        }
         scope.launch {
             val result = postRepository.getReplies(postId)
-            if (result.isSuccess) {
+            if (result.isSuccess && selectedQuestion?.id == postId && requestVersion == repliesRequestVersion) {
                 replies = result.getOrDefault(emptyList())
             }
         }
@@ -249,6 +268,7 @@ fun CampusQnAApp(
 
         // Instantly soft-hide post on client side for the reporting student
         questions = questions.filter { it.id != postId }
+        searchResults = searchResults.filter { it.id != postId }
         savedQuestions = savedQuestions.filter { it.id != postId }
         userCreatedPosts = userCreatedPosts.filter { it.id != postId }
         if (selectedQuestion?.id == postId) {
@@ -277,6 +297,30 @@ fun CampusQnAApp(
         }
     }
 
+    LaunchedEffect(searchQuery, searchRefreshVersion) {
+        if (searchQuery.isBlank()) {
+            searchResults = emptyList()
+            isSearching = false
+            searchError = null
+            return@LaunchedEffect
+        }
+
+        isSearching = true
+        searchError = null
+        delay(300)
+
+        val result = postRepository.searchPosts(searchQuery)
+        // The repository returns Result, including cancellation; don't apply an obsolete query.
+        coroutineContext.ensureActive()
+        result.onSuccess {
+            searchResults = it
+        }.onFailure {
+            // Keep the last successful results visible if a background refresh fails.
+            searchError = "Search failed. Please try again."
+        }
+        isSearching = false
+    }
+
     LaunchedEffect(Unit) {
         refreshQuestions()
         if (authRepository.isLoggedIn()) {
@@ -289,7 +333,11 @@ fun CampusQnAApp(
 
     if (currentScreen != "splash" && currentScreen != "home" && currentScreen != "landing") {
         BackHandler {
-            currentScreen = if (authRepository.isLoggedIn()) "home" else "landing"
+            currentScreen = when {
+                !authRepository.isLoggedIn() -> "landing"
+                currentScreen == "post" -> postReturnScreen
+                else -> "home"
+            }
         }
     }
 
@@ -354,12 +402,13 @@ fun CampusQnAApp(
                         )
                     }
 
-                    "home" -> {
+                    "home" -> listScreenState.SaveableStateProvider("home") {
                         HomeScreen(
                             questions = questions,
                             isLoading = isFeedLoading,
                             savedPostIds = savedPostIds,
                             onQuestionClick = { questionId ->
+                                postReturnScreen = "home"
                                 selectedQuestion = questions.find { it.id == questionId }
                                 refreshReplies(questionId)
                                 currentScreen = "post"
@@ -379,13 +428,19 @@ fun CampusQnAApp(
                         )
                     }
 
-                    "search" -> {
+                    "search" -> listScreenState.SaveableStateProvider("search") {
                         SearchPage(
                             questions = questions,
+                            searchQuery = searchQuery,
+                            onSearchQueryChange = { searchQuery = it },
+                            searchResults = searchResults,
+                            isSearching = isSearching,
+                            searchError = searchError,
                             savedPostIds = savedPostIds,
-                            onQuestionClick = { questionId ->
-                                selectedQuestion = questions.find { it.id == questionId }
-                                refreshReplies(questionId)
+                            onQuestionClick = { question ->
+                                postReturnScreen = "search"
+                                selectedQuestion = question
+                                refreshReplies(question.id)
                                 currentScreen = "post"
                             },
                             onUpvoteClick = { questionId -> handleUpvote(questionId) },
@@ -408,23 +463,38 @@ fun CampusQnAApp(
                                 question = question,
                                 replies = replies,
                                 isBookmarked = savedPostIds.contains(question.id),
-                                onBackClick = { currentScreen = "home" },
+                                onBackClick = { currentScreen = postReturnScreen },
                                 onUpvoteClick = { handleUpvote(question.id) },
                                 onDownvoteClick = { handleDownvote(question.id) },
                                 onBookmarkClick = { questionId -> toggleBookmark(questionId) },
                                 onReportClick = { postId, reason -> handleReportPost(postId, reason) },
-                                onSubmitReply = { text, onResult ->
+                                onSubmitReply = { text, parentReplyId, onResult ->
                                     scope.launch {
-                                        val result = postRepository.createReply(question.id, text)
+                                        val result = postRepository.createReply(question.id, text, parentReplyId)
                                         if (result.isSuccess) {
                                             refreshReplies(question.id)
                                             refreshQuestions()
                                             onResult(null)
                                         } else {
-                                            onResult(
-                                                result.exceptionOrNull()?.localizedMessage
-                                                    ?: "Failed to post answer to database."
-                                            )
+                                            // Supabase exceptions can include request headers.
+                                            onResult("Could not post your reply. Please try again.")
+                                        }
+                                    }
+                                },
+                                onReplyVote = { replyId, voteType, onResult ->
+                                    scope.launch {
+                                        val result = postRepository.voteReply(replyId, voteType)
+                                        if (result.isSuccess) {
+                                            val requestVersion = ++repliesRequestVersion
+                                            val refreshed = postRepository.getReplies(question.id)
+                                            if (refreshed.isSuccess && selectedQuestion?.id == question.id && requestVersion == repliesRequestVersion) {
+                                                replies = refreshed.getOrThrow()
+                                            }
+                                            onResult(refreshed.exceptionOrNull()?.let {
+                                                "Vote saved, but replies could not refresh. Reopen this post."
+                                            })
+                                        } else {
+                                            onResult("Could not save your vote. Please try again.")
                                         }
                                     }
                                 },
@@ -449,6 +519,7 @@ fun CampusQnAApp(
                             userPosts = userCreatedPosts,
                             isLoadingPosts = isUserPostsLoading,
                             onQuestionClick = { questionId ->
+                                postReturnScreen = "home"
                                 selectedQuestion = questions.find { it.id == questionId }
                                     ?: savedQuestions.find { it.id == questionId }
                                             ?: userCreatedPosts.find { it.id == questionId }
@@ -465,7 +536,11 @@ fun CampusQnAApp(
                                 refreshSavedPosts()
                                 currentScreen = "saved_posts"
                             },
-                            onLogOutClick = { currentScreen = "landing" },
+                            onLogOutClick = {
+                                searchQuery = ""
+                                searchResults = emptyList()
+                                currentScreen = "landing"
+                            },
                             onNavDestinationSelected = { destination ->
                                 when (destination) {
                                     BottomNavDestination.HOME -> currentScreen = "home"
@@ -483,6 +558,7 @@ fun CampusQnAApp(
                             savedPostIds = savedPostIds,
                             isLoading = isSavedLoading,
                             onQuestionClick = { questionId ->
+                                postReturnScreen = "home"
                                 selectedQuestion = questions.find { it.id == questionId }
                                     ?: savedQuestions.find { it.id == questionId }
                                             ?: userCreatedPosts.find { it.id == questionId }

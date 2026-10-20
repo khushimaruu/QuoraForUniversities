@@ -18,28 +18,65 @@ import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.MADproject.quoraforuniversities.components.AppHeader
+import com.MADproject.quoraforuniversities.components.AuthorByline
 import com.MADproject.quoraforuniversities.components.BottomNavBar
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
 import com.MADproject.quoraforuniversities.components.ReportPostDialog
 import com.MADproject.quoraforuniversities.data.GeminiService
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
+import com.MADproject.quoraforuniversities.utils.ReplyMentions
 import kotlinx.coroutines.launch
 
 data class ReplyUiModel(
     val id: String,
     val authorName: String,
     val body: String,
-    val voteCount: Int
+    val voteCount: Int,
+    val createdAt: String? = null,
+    val authorUsername: String? = null,
+    val parentReplyId: String? = null,
+    val upvoteCount: Int = voteCount.coerceAtLeast(0),
+    val downvoteCount: Int = 0,
+    val currentUserVote: Int = 0
 )
+
+/** Keep each thread contiguous in one LazyColumn, with only one visual indent. */
+private fun arrangeReplies(replies: List<ReplyUiModel>): List<Pair<ReplyUiModel, Boolean>> {
+    val ids = replies.map { it.id }.toSet()
+    val children = replies.groupBy { it.parentReplyId }
+    val visited = mutableSetOf<String>()
+    val rows = mutableListOf<Pair<ReplyUiModel, Boolean>>()
+    fun appendThread(root: ReplyUiModel) {
+        val pending = mutableListOf(root to false)
+        while (pending.isNotEmpty()) {
+            val row = pending.removeAt(pending.lastIndex)
+            if (!visited.add(row.first.id)) continue
+            rows += row
+            children[row.first.id].orEmpty().asReversed().forEach { pending += it to true }
+        }
+    }
+    replies.filter { it.parentReplyId == null || it.parentReplyId !in ids }.forEach(::appendThread)
+    // Preserve all loaded rows even if a parent is hidden or legacy data is cyclic.
+    replies.filter { it.id !in visited }.forEach(::appendThread)
+    return rows
+}
 
 @Composable
 fun PostDetailPage(
@@ -52,10 +89,19 @@ fun PostDetailPage(
     onDownvoteClick: () -> Unit = {},
     onBookmarkClick: ((String) -> Unit)? = null,
     onReportClick: ((postId: String, reason: String) -> Unit)? = null,
-    onSubmitReply: (text: String, onResult: (String?) -> Unit) -> Unit = { _, _ -> },
+    onSubmitReply: (text: String, parentReplyId: String?, onResult: (String?) -> Unit) -> Unit = { _, _, _ -> },
+    onReplyVote: (replyId: String, voteType: Int, onResult: (String?) -> Unit) -> Unit = { _, _, onResult -> onResult(null) },
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
 ) {
-    var replyText by remember { mutableStateOf("") }
+    var replyText by rememberSaveable(question.id, stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue())
+    }
+    val replyFocusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val replyRows = remember(replies) { arrangeReplies(replies) }
+    var selectedParentId by rememberSaveable(question.id) { mutableStateOf<String?>(null) }
+    var selectedParentUsername by rememberSaveable(question.id) { mutableStateOf<String?>(null) }
+    var pendingVotes by remember(question.id) { mutableStateOf(emptySet<String>()) }
     var isSubmitting by remember { mutableStateOf(false) }
     var replyError by remember { mutableStateOf<String?>(null) }
     var showMenu by remember { mutableStateOf(false) }
@@ -103,10 +149,10 @@ fun PostDetailPage(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(
-                                    text = if (question.isAnonymous) "Anonymous" else question.authorName,
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                AuthorByline(
+                                    authorName = if (question.isAnonymous) "Anonymous" else question.authorName,
+                                    createdAt = question.createdAt,
+                                    modifier = Modifier.weight(1f)
                                 )
 
                                 Box {
@@ -271,8 +317,33 @@ fun PostDetailPage(
                 }
 
                 // REPLIES LIST
-                items(replies, key = { it.id }) { reply ->
-                    ReplyCard(reply = reply)
+                items(replyRows, key = { it.first.id }) { (reply, isChild) ->
+                    ReplyCard(
+                        reply = reply,
+                        modifier = Modifier.padding(start = if (isChild) 24.dp else 0.dp),
+                        replyEnabled = !isSubmitting,
+                        voteEnabled = reply.id !in pendingVotes,
+                        onVoteClick = { voteType ->
+                            if (reply.id !in pendingVotes) {
+                                pendingVotes = pendingVotes + reply.id
+                                onReplyVote(reply.id, voteType) { error ->
+                                    pendingVotes = pendingVotes - reply.id
+                                    replyError = error
+                                }
+                            }
+                        }
+                    ) {
+                        reply.authorUsername?.takeIf { it.isNotBlank() }?.let { username ->
+                            val text = ReplyMentions.prepend(replyText.text, username)
+                            val mentionEnd = username.trim().removePrefix("@").length + 2
+                            replyText = TextFieldValue(text, TextRange(mentionEnd.coerceAtMost(text.length)))
+                            selectedParentId = reply.id
+                            selectedParentUsername = username
+                            replyError = null
+                            replyFocusRequester.requestFocus()
+                            keyboard?.show()
+                        }
+                    }
                 }
             }
 
@@ -289,6 +360,20 @@ fun PostDetailPage(
                         .fillMaxWidth()
                         .padding(12.dp)
                 ) {
+                    selectedParentId?.let {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "Replying to @${selectedParentUsername.orEmpty()}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(enabled = !isSubmitting, onClick = {
+                                selectedParentId = null
+                                selectedParentUsername = null
+                            }) { Text("Cancel", style = MaterialTheme.typography.labelSmall) }
+                        }
+                    }
                     replyError?.let { msg ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -318,10 +403,14 @@ fun PostDetailPage(
                             value = replyText,
                             onValueChange = {
                                 replyText = it
+                                if (it.text.isBlank()) {
+                                    selectedParentId = null
+                                    selectedParentUsername = null
+                                }
                                 replyError = null
                             },
                             enabled = !isSubmitting,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).focusRequester(replyFocusRequester),
                             placeholder = { Text("Write an answer...") },
                             maxLines = 3,
                             shape = RoundedCornerShape(12.dp)
@@ -330,13 +419,15 @@ fun PostDetailPage(
                         Spacer(modifier = Modifier.width(8.dp))
 
                         IconButton(
-                            enabled = replyText.isNotBlank() && !isSubmitting,
+                            enabled = replyText.text.isNotBlank() && !isSubmitting,
                             onClick = {
-                                if (replyText.isNotBlank() && !isSubmitting) {
+                                if (replyText.text.isNotBlank() && !isSubmitting) {
+                                    val submittedText = replyText.text.trim()
+                                    val submittedParentId = selectedParentId
                                     isSubmitting = true
                                     replyError = null
                                     scope.launch {
-                                        val moderationResult = geminiService.checkReplyModeration(replyText.trim())
+                                        val moderationResult = geminiService.checkReplyModeration(submittedText)
                                         if (moderationResult.isSuccess) {
                                             val mod = moderationResult.getOrNull()
                                             if (mod != null && !mod.isAllowed) {
@@ -351,12 +442,14 @@ fun PostDetailPage(
                                             return@launch
                                         }
 
-                                        onSubmitReply(replyText.trim()) { error ->
+                                        onSubmitReply(submittedText, submittedParentId) { error ->
                                             isSubmitting = false
                                             if (error != null) {
                                                 replyError = error
                                             } else {
-                                                replyText = ""
+                                                replyText = TextFieldValue()
+                                                selectedParentId = null
+                                                selectedParentUsername = null
                                             }
                                         }
                                     }
@@ -387,9 +480,16 @@ fun PostDetailPage(
 }
 
 @Composable
-fun ReplyCard(reply: ReplyUiModel) {
+fun ReplyCard(
+    reply: ReplyUiModel,
+    replyEnabled: Boolean = true,
+    modifier: Modifier = Modifier,
+    voteEnabled: Boolean = true,
+    onVoteClick: (Int) -> Unit = {},
+    onReplyClick: () -> Unit = {}
+) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -399,17 +499,24 @@ fun ReplyCard(reply: ReplyUiModel) {
                 .fillMaxWidth()
                 .padding(15.dp)
         ) {
-            Text(
-                text = reply.authorName,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            AuthorByline(
+                authorName = reply.authorName,
+                createdAt = reply.createdAt
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = reply.body,
+                text = buildAnnotatedString {
+                    append(reply.body)
+                    ReplyMentions.pattern.findAll(reply.body).forEach { match ->
+                        addStyle(
+                            SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium),
+                            match.range.first,
+                            match.range.last + 1
+                        )
+                    }
+                },
                 fontSize = 14.sp,
                 lineHeight = 21.sp
             )
@@ -417,18 +524,37 @@ fun ReplyCard(reply: ReplyUiModel) {
             Spacer(modifier = Modifier.height(10.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.ThumbUp,
-                    contentDescription = "Votes",
-                    modifier = Modifier.size(17.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.width(5.dp))
-                Text(
-                    text = reply.voteCount.toString(),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                TextButton(
+                    onClick = { onVoteClick(1) }, enabled = voteEnabled,
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                ) {
+                    val tint = if (reply.currentUserVote == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    Icon(
+                        imageVector = if (reply.currentUserVote == 1) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                        contentDescription = "Like reply", modifier = Modifier.size(17.dp), tint = tint
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Text(reply.upvoteCount.toString(), fontSize = 12.sp, color = tint)
+                }
+                TextButton(
+                    onClick = { onVoteClick(-1) }, enabled = voteEnabled,
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                ) {
+                    val tint = if (reply.currentUserVote == -1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    Icon(
+                        imageVector = if (reply.currentUserVote == -1) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
+                        contentDescription = "Dislike reply", modifier = Modifier.size(17.dp), tint = tint
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Text(reply.downvoteCount.toString(), fontSize = 12.sp, color = tint)
+                }
+                TextButton(
+                    onClick = onReplyClick,
+                    enabled = replyEnabled && !reply.authorUsername.isNullOrBlank(),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                ) {
+                    Text("Reply", style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
     }

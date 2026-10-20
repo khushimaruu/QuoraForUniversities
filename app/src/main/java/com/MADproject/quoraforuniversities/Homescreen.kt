@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -32,6 +33,7 @@ fun HomeScreen(
     onReportClick: ((postId: String, reason: String) -> Unit)? = null,
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {},
 ) {
+    val listState = rememberLazyListState()
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = { AppHeader() },
@@ -64,6 +66,7 @@ fun HomeScreen(
                 }
                 else -> {
                     LazyColumn(
+                        state = listState,
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {

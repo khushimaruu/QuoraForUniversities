@@ -6,9 +6,15 @@ import com.MADproject.quoraforuniversities.components.QuestionUiModel
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.time.Instant
+import java.time.OffsetDateTime
 
 class PostRepository {
+    private val replyVoteMutex = Mutex()
 
     companion object {
         const val REPORT_HIDE_THRESHOLD = 3
@@ -18,7 +24,9 @@ class PostRepository {
     suspend fun getPosts(): Result<List<QuestionUiModel>> {
         return runCatching<List<QuestionUiModel>> {
             val dbPosts = SupabaseClient.client.from("posts")
-                .select(Columns.raw("*, profiles(*)"))
+                .select(Columns.raw("*, profiles(*)")) {
+                    order("created_at", Order.DESCENDING)
+                }
                 .decodeList<PostWithProfileDto>()
 
             val allReplies = runCatching {
@@ -234,27 +242,66 @@ class PostRepository {
                     downvoteCount = down,
                     currentUserVote = userVotesMap[id] ?: 0
                 )
-            }
+            }.sortedWith(
+                compareByDescending<QuestionUiModel> { it.upvoteCount }
+                    .thenByDescending {
+                        runCatching { OffsetDateTime.parse(it.createdAt).toInstant() }.getOrDefault(Instant.MIN)
+                    }
+            )
         }
     }
 
     suspend fun getReplies(postId: String): Result<List<ReplyUiModel>> {
         return runCatching<List<ReplyUiModel>> {
-            SupabaseClient.client.from("replies")
+            val dbReplies = SupabaseClient.client.from("replies")
                 .select(Columns.raw("*, profiles(*)")) {
                     filter {
                         eq("post_id", postId)
                     }
+                    order("created_at", Order.ASCENDING)
                 }
                 .decodeList<ReplyWithProfileDto>()
-                .map { it.toUiModel() }
+            if (dbReplies.isEmpty()) return@runCatching emptyList()
+            val votes = SupabaseClient.client.from("votes").select {
+                filter { isIn("reply_id", dbReplies.mapNotNull { it.id }) }
+            }.decodeList<VoteDto>().groupBy { it.replyId }
+            val userId = SupabaseClient.client.auth.currentUserOrNull()?.id
+            dbReplies.map { reply ->
+                val replyVotes = votes[reply.id].orEmpty()
+                val up = replyVotes.count { it.voteType == 1 }
+                val down = replyVotes.count { it.voteType == -1 }
+                reply.toUiModel(
+                    voteCount = up - down, upvoteCount = up, downvoteCount = down,
+                    currentUserVote = replyVotes.firstOrNull { it.userId == userId }?.voteType ?: 0
+                )
+            }
         }
     }
 
-    suspend fun createReply(postId: String, content: String): Result<Unit> {
+    suspend fun createReply(postId: String, content: String, parentReplyId: String? = null): Result<Unit> {
         return runCatching<Unit> {
             val user = SupabaseClient.client.auth.currentUserOrNull() ?: error("User not logged in")
-            SupabaseClient.client.from("replies").insert(CreateReplyDto(user.id, postId, content))
+            SupabaseClient.client.from("replies").insert(CreateReplyDto(user.id, postId, content, parentReplyId))
+        }
+    }
+
+    suspend fun voteReply(replyId: String, voteType: Int): Result<Unit> = replyVoteMutex.withLock {
+        runCatching {
+            require(voteType == 1 || voteType == -1)
+            val user = SupabaseClient.client.auth.currentUserOrNull() ?: error("Sign in to vote on replies.")
+            val existing = SupabaseClient.client.from("votes").select {
+                filter { eq("user_id", user.id); eq("reply_id", replyId) }
+            }.decodeList<VoteDto>()
+            if (existing.any { it.voteType == voteType }) {
+                SupabaseClient.client.from("votes").delete {
+                    filter { eq("user_id", user.id); eq("reply_id", replyId) }
+                }
+            } else {
+                SupabaseClient.client.from("votes").upsert(
+                    CreateVoteDto(userId = user.id, replyId = replyId, voteType = voteType)
+                ) { onConflict = "reply_id,user_id" }
+            }
+            Unit
         }
     }
 

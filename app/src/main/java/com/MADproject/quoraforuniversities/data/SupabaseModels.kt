@@ -4,6 +4,8 @@ import com.MADproject.quoraforuniversities.ReplyUiModel
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 
 @Serializable
 data class PostDto(
@@ -57,7 +59,8 @@ data class ReplyDto(
     @SerialName("post_id") val postId: String = "",
     val content: String = "",
     @SerialName("created_at") val createdAt: String? = null,
-    @SerialName("updated_at") val updatedAt: String? = null
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("parent_reply_id") val parentReplyId: String? = null
 )
 
 @Serializable
@@ -68,14 +71,18 @@ data class ReplyWithProfileDto(
     val content: String = "",
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
-    val profiles: ProfileDto? = null
+    val profiles: ProfileDto? = null,
+    @SerialName("parent_reply_id") val parentReplyId: String? = null
 )
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class CreateReplyDto(
     @SerialName("user_id") val userId: String? = null,
     @SerialName("post_id") val postId: String,
-    val content: String
+    val content: String,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("parent_reply_id") val parentReplyId: String? = null
 )
 
 @Serializable
@@ -167,7 +174,8 @@ fun PostDto.toUiModel(
         answerCount = answerCount,
         upvoteCount = upvoteCount,
         downvoteCount = downvoteCount,
-        currentUserVote = currentUserVote
+        currentUserVote = currentUserVote,
+        createdAt = createdAt
     )
 }
 
@@ -200,30 +208,44 @@ fun PostWithProfileDto.toUiModel(
         answerCount = answerCount,
         upvoteCount = upvoteCount,
         downvoteCount = downvoteCount,
-        currentUserVote = currentUserVote
+        currentUserVote = currentUserVote,
+        createdAt = createdAt
     )
 }
 
 fun ReplyDto.toUiModel(
     authorName: String = "Anonymous",
-    voteCount: Int = 0
+    voteCount: Int = 0,
+    authorUsername: String? = null
 ): ReplyUiModel {
     return ReplyUiModel(
         id = id ?: "",
         authorName = authorName,
         body = content,
-        voteCount = voteCount
+        voteCount = voteCount,
+        createdAt = createdAt,
+        authorUsername = authorUsername,
+        parentReplyId = parentReplyId
     )
 }
 
 fun ReplyWithProfileDto.toUiModel(
-    voteCount: Int = 0
+    voteCount: Int = 0,
+    upvoteCount: Int = 0,
+    downvoteCount: Int = 0,
+    currentUserVote: Int = 0
 ): ReplyUiModel {
     val resolvedAuthorName = profiles?.name ?: profiles?.username ?: "Student"
     return ReplyUiModel(
         id = id ?: "",
         authorName = resolvedAuthorName,
         body = content,
-        voteCount = voteCount
+        voteCount = voteCount,
+        createdAt = createdAt,
+        authorUsername = profiles?.username?.takeIf { it.isNotBlank() },
+        parentReplyId = parentReplyId,
+        upvoteCount = upvoteCount,
+        downvoteCount = downvoteCount,
+        currentUserVote = currentUserVote
     )
 }

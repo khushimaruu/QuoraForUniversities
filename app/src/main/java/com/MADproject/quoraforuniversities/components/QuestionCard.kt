@@ -40,7 +40,8 @@ data class QuestionUiModel(
     val answerCount: Int = 0,
     val upvoteCount: Int = voteCount,
     val downvoteCount: Int = 0,
-    val currentUserVote: Int = 0 // 1 for upvote, -1 for downvote, 0 for none
+    val currentUserVote: Int = 0, // 1 for upvote, -1 for downvote, 0 for none
+    val createdAt: String? = null
 )
 
 val CommunityReportReasons = listOf(
@@ -84,7 +85,7 @@ fun QuestionCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     val avatarBrush = if (question.isAnonymous) {
                         Brush.linearGradient(
                             listOf(
@@ -118,11 +119,10 @@ fun QuestionCard(
                         )
                     }
                     Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = if (question.isAnonymous) "Anonymous" else question.authorName,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    AuthorByline(
+                        authorName = if (question.isAnonymous) "Anonymous" else question.authorName,
+                        createdAt = question.createdAt,
+                        modifier = Modifier.weight(1f)
                     )
                 }
 

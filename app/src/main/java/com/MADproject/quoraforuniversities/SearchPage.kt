@@ -4,7 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -19,39 +21,28 @@ import com.MADproject.quoraforuniversities.components.BottomNavBar
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import com.MADproject.quoraforuniversities.components.QuestionCard
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
-import com.MADproject.quoraforuniversities.data.PostRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
-import kotlinx.coroutines.delay
 
 @Composable
 fun SearchPage(
     questions: List<QuestionUiModel>,
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
+    searchResults: List<QuestionUiModel> = emptyList(),
+    isSearching: Boolean = false,
+    searchError: String? = null,
     savedPostIds: Set<String> = emptySet(),
-    onQuestionClick: (String) -> Unit = {},
+    onQuestionClick: (QuestionUiModel) -> Unit = {},
     onUpvoteClick: (String) -> Unit = {},
     onBookmarkClick: ((String) -> Unit)? = null,
     onReportClick: ((postId: String, reason: String) -> Unit)? = null,
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
 ) {
 
-    var searchQuery by rememberSaveable {
-        mutableStateOf("")
-    }
-
-    val postRepository = remember {
-        PostRepository()
-    }
-
-    var searchResults by remember {
-        mutableStateOf<List<QuestionUiModel>>(emptyList())
-    }
-
-    var isSearching by remember {
-        mutableStateOf(false)
-    }
-
-    var searchError by remember {
-        mutableStateOf<String?>(null)
+    // Keep states alive while results are temporarily replaced by a loading UI.
+    val categoriesListState = rememberLazyListState()
+    val resultsListState = rememberSaveable(searchQuery, saver = LazyListState.Saver) {
+        LazyListState()
     }
 
     // CREATE CATEGORIES FROM EXISTING QUESTION TAGS
@@ -60,34 +51,6 @@ fun SearchPage(
             .flatMap { it.tags }
             .distinct()
             .sorted()
-    }
-
-    // SEARCH POSTS FROM SUPABASE
-    LaunchedEffect(searchQuery) {
-
-        if (searchQuery.isBlank()) {
-            searchResults = emptyList()
-            isSearching = false
-            searchError = null
-            return@LaunchedEffect
-        }
-
-        isSearching = true
-        searchError = null
-
-        // WAIT UNTIL USER STOPS TYPING BRIEFLY
-        delay(300)
-
-        val result = postRepository.searchPosts(searchQuery)
-
-        result.onSuccess {
-            searchResults = it
-        }.onFailure {
-            searchResults = emptyList()
-            searchError = it.message ?: "Search failed"
-        }
-
-        isSearching = false
     }
 
     Scaffold(
@@ -125,9 +88,7 @@ fun SearchPage(
             // SEARCH BAR
             OutlinedTextField(
                 value = searchQuery,
-                onValueChange = {
-                    searchQuery = it
-                },
+                onValueChange = onSearchQueryChange,
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = {
                     Text("Search questions or categories...")
@@ -154,17 +115,18 @@ fun SearchPage(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 LazyColumn(
+                    state = categoriesListState,
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
 
-                    items(categories) { category ->
+                    items(categories, key = { it }) { category ->
 
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    searchQuery = category
+                                    onSearchQueryChange(category)
                                 },
                             colors = CardDefaults.cardColors(
                                 containerColor =
@@ -189,7 +151,7 @@ fun SearchPage(
                 // SHOW LOADING, ERRORS OR SEARCH RESULTS
                 when {
 
-                    isSearching -> {
+                    isSearching && searchResults.isEmpty() -> {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -198,7 +160,7 @@ fun SearchPage(
                         }
                     }
 
-                    searchError != null -> {
+                    searchError != null && searchResults.isEmpty() -> {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -223,21 +185,29 @@ fun SearchPage(
                     }
 
                     else -> {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(14.dp),
-                            contentPadding = PaddingValues(bottom = 16.dp)
-                        ) {
-                            items(
-                                items = searchResults,
-                                key = { it.id }
-                            ) { question ->
-                                QuestionCard(
-                                    question = question,
-                                    onClick = onQuestionClick,
-                                    onUpvoteClick = onUpvoteClick,
-                                    onBookmarkClick = onBookmarkClick,
-                                    onReportClick = onReportClick,
-                                    isBookmarked = savedPostIds.contains(question.id)
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            LazyColumn(
+                                state = resultsListState,
+                                verticalArrangement = Arrangement.spacedBy(14.dp),
+                                contentPadding = PaddingValues(bottom = 16.dp)
+                            ) {
+                                items(
+                                    items = searchResults,
+                                    key = { it.id }
+                                ) { question ->
+                                    QuestionCard(
+                                        question = question,
+                                        onClick = { onQuestionClick(question) },
+                                        onUpvoteClick = onUpvoteClick,
+                                        onBookmarkClick = onBookmarkClick,
+                                        onReportClick = onReportClick,
+                                        isBookmarked = savedPostIds.contains(question.id)
+                                    )
+                                }
+                            }
+                            if (isSearching) {
+                                LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter)
                                 )
                             }
                         }
