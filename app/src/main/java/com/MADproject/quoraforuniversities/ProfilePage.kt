@@ -65,11 +65,9 @@ import java.io.ByteArrayOutputStream
 fun ProfileScreen(
     authRepository: AuthRepository = remember { AuthRepository() },
     profileRepository: ProfileRepository = remember { ProfileRepository() },
-    savedCount: Int = 0,
     savedPostIds: Set<String> = emptySet(),
     userPosts: List<QuestionUiModel> = emptyList(),
     isLoadingPosts: Boolean = false,
-    savedQuestions: List<QuestionUiModel> = emptyList(),
     userAnswers: List<ProfileAnswerUiModel> = emptyList(),
     isLoadingAnswers: Boolean = false,
     onQuestionClick: (String) -> Unit = {},
@@ -77,7 +75,6 @@ fun ProfileScreen(
     onDownvoteClick: (String) -> Unit = {},
     onBookmarkClick: (String) -> Unit = {},
     onReportClick: (String, String) -> Unit = { _, _ -> },
-    onSavedPostsClick: () -> Unit = {},
     onPhotoSaved: () -> Unit = {},
     onLogOutClick: () -> Unit = {},
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
@@ -167,10 +164,10 @@ fun ProfileScreen(
     ProfileContent(
         profile = profile, email = emailText, name = name, username = username, bio = bio,
         profileBitmap = profileBitmap, uploading = isUploadingPhoto, error = profileError,
-        savedCount = savedCount, savedPostIds = savedPostIds, userPosts = userPosts, isLoadingPosts = isLoadingPosts,
-        savedQuestions = savedQuestions, userAnswers = userAnswers, isLoadingAnswers = isLoadingAnswers,
+        savedPostIds = savedPostIds, userPosts = userPosts, isLoadingPosts = isLoadingPosts,
+        userAnswers = userAnswers, isLoadingAnswers = isLoadingAnswers,
         onBioClick = { editedBioText = profile?.bio.orEmpty(); showEditBioDialog = true },
-        onSavedPostsClick = onSavedPostsClick, onQuestionClick = onQuestionClick,
+        onQuestionClick = onQuestionClick,
         onUpvoteClick = onUpvoteClick, onDownvoteClick = onDownvoteClick,
         onBookmarkClick = onBookmarkClick, onReportClick = onReportClick,
         onLogOutClick = { scope.launch {
@@ -256,18 +253,18 @@ fun ProfileScreen(
 @Composable
 internal fun ProfileContent(
     profile: ProfileDto?, email: String, name: String, username: String, bio: String,
-    profileBitmap: Bitmap?, uploading: Boolean, error: String?, savedCount: Int,
+    profileBitmap: Bitmap?, uploading: Boolean, error: String?,
     savedPostIds: Set<String>, userPosts: List<QuestionUiModel>, isLoadingPosts: Boolean,
-    onBioClick: () -> Unit, onSavedPostsClick: () -> Unit,
+    onBioClick: () -> Unit,
     onQuestionClick: (String) -> Unit, onUpvoteClick: (String) -> Unit, onDownvoteClick: (String) -> Unit,
     onBookmarkClick: (String) -> Unit, onReportClick: (String, String) -> Unit,
     onLogOutClick: () -> Unit, onNavDestinationSelected: (BottomNavDestination) -> Unit,
-    savedQuestions: List<QuestionUiModel> = emptyList(), userAnswers: List<ProfileAnswerUiModel> = emptyList(),
+    userAnswers: List<ProfileAnswerUiModel> = emptyList(),
     isLoadingAnswers: Boolean = false
 ) {
-    var selectedTab by rememberSaveable { mutableStateOf("Saved Questions") }
+    var selectedTab by rememberSaveable { mutableStateOf("My Questions") }
     var topic by rememberSaveable(selectedTab) { mutableStateOf("All") }
-    val posts = if (selectedTab == "Saved Questions") savedQuestions else userPosts
+    val posts = userPosts
     val activeTopics = if (selectedTab == "Answers") userAnswers.flatMap { it.question.tags } else posts.flatMap { it.tags }
     val categories = activeTopics.distinct()
     val visiblePosts = if (topic == "All") posts else posts.filter { topic in it.tags }
@@ -318,15 +315,12 @@ internal fun ProfileContent(
             if (error != null) item { ErrorBanner(error) }
             item {
                 Column {
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        listOf("Saved Questions" to savedCount, "My Questions" to userPosts.size,
-                            "Answers" to userAnswers.size).forEach { (label, count) ->
+                    Row(Modifier.fillMaxWidth()) {
+                        listOf("My Questions" to userPosts.size, "Answers" to userAnswers.size).forEach { (label, count) ->
                             val active = selectedTab == label
-                            Column(Modifier.semantics { selected = active }.clickable {
+                            Column(Modifier.weight(1f).semantics { selected = active }.clickable {
                                 selectedTab = label
-                                if (label == "Saved Questions") onSavedPostsClick()
-                            }.padding(horizontal = 6.dp)) {
+                            }.padding(horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Row(Modifier.heightIn(min = 42.dp), verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text(label, style = MaterialTheme.typography.labelMedium,
@@ -362,9 +356,9 @@ internal fun ProfileContent(
                     TextButton(onClick = { onQuestionClick(entry.question.id) }) { Text("View conversation →") }
                 } }
             } else {
-                if (visiblePosts.isEmpty() && !isLoadingPosts) item { ScreenMessage(
-                    if (selectedTab == "Saved Questions") "No saved questions yet" else "No questions yet",
-                    if (selectedTab == "Saved Questions") "Bookmark a question and it will appear in this tab." else "Questions you post will appear here.") }
+                if (visiblePosts.isEmpty() && !isLoadingPosts) item {
+                    ScreenMessage("No questions yet", "Questions you post will appear here.")
+                }
                 items(visiblePosts, key = { it.id }) { post -> QuestionCard(post, onQuestionClick, onUpvoteClick,
                     onDownvoteClick = onDownvoteClick, onBookmarkClick = onBookmarkClick, onReportClick = onReportClick,
                     isBookmarked = post.id in savedPostIds) }
@@ -413,8 +407,8 @@ private fun base64ToBitmap(base64Str: String): Bitmap? {
 fun ProfileScreenPreview() {
     CampusQnATheme {
         ProfileContent(null, "student@university.edu", "Campus student", "student", "Learning something new every day.",
-            null, false, null, 2, emptySet(), sampleQuestions, false,
-            {}, {}, {}, {}, {}, {}, { _, _ -> }, {}, {}, savedQuestions = sampleQuestions)
+            null, false, null, emptySet(), sampleQuestions, false,
+            {}, {}, {}, {}, {}, { _, _ -> }, {}, {})
     }
 }
 

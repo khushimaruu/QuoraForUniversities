@@ -549,11 +549,9 @@ fun CampusQnAApp(
                         ProfileScreen(
                             authRepository = authRepository,
                             profileRepository = profileRepository,
-                            savedCount = savedPostIds.size,
                             savedPostIds = savedPostIds,
                             userPosts = userCreatedPosts,
                             isLoadingPosts = isUserPostsLoading,
-                            savedQuestions = savedQuestions,
                             userAnswers = userAnswers,
                             isLoadingAnswers = isUserAnswersLoading,
                             onQuestionClick = { questionId ->
@@ -571,7 +569,6 @@ fun CampusQnAApp(
                             onDownvoteClick = { handleDownvote(it) },
                             onBookmarkClick = { toggleBookmark(it) },
                             onReportClick = { id, reason -> handleReportPost(id, reason) },
-                            onSavedPostsClick = { refreshSavedPosts() },
                             onPhotoSaved = {
                                 refreshQuestions()
                                 refreshSavedPosts()
