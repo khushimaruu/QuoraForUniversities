@@ -57,8 +57,8 @@ class GeminiService {
                     return@runCatching localResult
                 }
 
-                if (apiKey.isBlank() || apiKey == "YOUR_GEMINI_API_KEY_HERE") {
-                    return@runCatching localResult
+                check(apiKey.isNotBlank() && apiKey != "YOUR_GEMINI_API_KEY_HERE") {
+                    "AI moderation is unavailable. Posting is disabled until it is configured."
                 }
 
                 val prompt = """
@@ -107,8 +107,8 @@ class GeminiService {
                     return@runCatching localResult
                 }
 
-                if (apiKey.isBlank() || apiKey == "YOUR_GEMINI_API_KEY_HERE") {
-                    return@runCatching localResult
+                check(apiKey.isNotBlank() && apiKey != "YOUR_GEMINI_API_KEY_HERE") {
+                    "AI moderation is unavailable. Posting is disabled until it is configured."
                 }
 
                 val prompt = """

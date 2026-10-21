@@ -135,9 +135,9 @@ fun ProfileScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { pickedUri ->
-            val inputStream = context.contentResolver.openInputStream(pickedUri)
-            val originalBitmap = BitmapFactory.decodeStream(inputStream)
-            inputStream?.close()
+            val originalBitmap = runCatching {
+                context.contentResolver.openInputStream(pickedUri)?.use(BitmapFactory::decodeStream)
+            }.getOrNull()
 
             if (originalBitmap != null) {
                 isUploadingPhoto = true
@@ -158,6 +158,8 @@ fun ProfileScreen(
                         isUploadingPhoto = false
                     }
                 }
+            } else {
+                profileError = "Could not open that photo. Please choose another image."
             }
         }
     }
@@ -167,7 +169,6 @@ fun ProfileScreen(
         profileBitmap = profileBitmap, uploading = isUploadingPhoto, error = profileError,
         savedCount = savedCount, savedPostIds = savedPostIds, userPosts = userPosts, isLoadingPosts = isLoadingPosts,
         savedQuestions = savedQuestions, userAnswers = userAnswers, isLoadingAnswers = isLoadingAnswers,
-        onPhotoClick = { imagePicker.launch("image/*") },
         onBioClick = { editedBioText = profile?.bio.orEmpty(); showEditBioDialog = true },
         onSavedPostsClick = onSavedPostsClick, onQuestionClick = onQuestionClick,
         onUpvoteClick = onUpvoteClick, onDownvoteClick = onDownvoteClick,
@@ -178,13 +179,23 @@ fun ProfileScreen(
         } }, onNavDestinationSelected = onNavDestinationSelected
     )
 
-    // ---------------- EDIT BIO DIALOG ----------------
+    // ---------------- EDIT PROFILE DIALOG ----------------
     if (showEditBioDialog) {
         AlertDialog(
             onDismissRequest = { if (!isSavingBio) showEditBioDialog = false },
-            title = { Text("Edit Bio", fontWeight = FontWeight.Bold) },
+            title = { Text("Edit profile", fontWeight = FontWeight.Bold) },
             text = {
                 Column {
+                    OutlinedButton(onClick = { imagePicker.launch("image/*") }, enabled = !isUploadingPhoto,
+                        modifier = Modifier.fillMaxWidth()) {
+                        if (isUploadingPhoto) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Default.PhotoCamera, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (isUploadingPhoto) "Saving photo…" else "Change photo")
+                    }
+                    profileError?.let { Text(it, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error) }
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         "Tell fellow students a bit about your major, interests, or year.",
                         fontSize = 13.sp,
@@ -219,7 +230,7 @@ fun ProfileScreen(
                             }
                         }
                     },
-                    enabled = !isSavingBio
+                    enabled = !isSavingBio && !isUploadingPhoto
                 ) {
                     if (isSavingBio) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
@@ -247,7 +258,7 @@ internal fun ProfileContent(
     profile: ProfileDto?, email: String, name: String, username: String, bio: String,
     profileBitmap: Bitmap?, uploading: Boolean, error: String?, savedCount: Int,
     savedPostIds: Set<String>, userPosts: List<QuestionUiModel>, isLoadingPosts: Boolean,
-    onPhotoClick: () -> Unit, onBioClick: () -> Unit, onSavedPostsClick: () -> Unit,
+    onBioClick: () -> Unit, onSavedPostsClick: () -> Unit,
     onQuestionClick: (String) -> Unit, onUpvoteClick: (String) -> Unit, onDownvoteClick: (String) -> Unit,
     onBookmarkClick: (String) -> Unit, onReportClick: (String, String) -> Unit,
     onLogOutClick: () -> Unit, onNavDestinationSelected: (BottomNavDestination) -> Unit,
@@ -266,12 +277,11 @@ internal fun ProfileContent(
         LazyColumn(Modifier.padding(padding).consumeWindowInsets(padding).readingWidth(), state = listState,
             contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer)
-                            .clickable(enabled = !uploading, onClick = onPhotoClick), Alignment.Center) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                    Box(Modifier.size(56.dp)) {
+                        Box(Modifier.fillMaxSize().clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer), Alignment.Center) {
                             if (profileBitmap != null) Image(profileBitmap.asImageBitmap(), "Change profile photo",
                                 Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                             else Text(name.firstOrNull()?.uppercase() ?: "S", style = MaterialTheme.typography.headlineSmall,
@@ -282,32 +292,26 @@ internal fun ProfileContent(
                                 }
                             }
                         }
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("@" + username, style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        TextButton(onClick = onBioClick, contentPadding = PaddingValues(horizontal = 6.dp)) {
-                            Icon(Icons.Default.Edit, null, Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Edit", style = MaterialTheme.typography.labelMedium)
-                        }
                     }
-                    Text(bio, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        TextButton(onClick = onPhotoClick, enabled = !uploading,
-                            contentPadding = PaddingValues(horizontal = 4.dp)) {
-                            if (uploading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.Default.PhotoCamera, null, Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(if (uploading) "Saving photo…" else "Change photo",
-                                style = MaterialTheme.typography.labelMedium)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            TextButton(onClick = onBioClick, modifier = Modifier.height(32.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
+                                Icon(Icons.Default.Edit, null, Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Edit", style = MaterialTheme.typography.labelMedium)
+                            }
                         }
-                        if (email.isNotBlank()) Text(email, modifier = Modifier.padding(vertical = 11.dp),
-                            style = MaterialTheme.typography.labelSmall,
+                        Text("@" + username, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(bio, style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (email.isNotBlank()) Text(email, style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (uploading) Text("Saving photo…", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
@@ -410,7 +414,7 @@ fun ProfileScreenPreview() {
     CampusQnATheme {
         ProfileContent(null, "student@university.edu", "Campus student", "student", "Learning something new every day.",
             null, false, null, 2, emptySet(), sampleQuestions, false,
-            {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, {}, {}, savedQuestions = sampleQuestions)
+            {}, {}, {}, {}, {}, {}, { _, _ -> }, {}, {}, savedQuestions = sampleQuestions)
     }
 }
 
