@@ -43,7 +43,8 @@ data class QuestionUiModel(
     val upvoteCount: Int = voteCount,
     val downvoteCount: Int = 0,
     val currentUserVote: Int = 0, // 1 for upvote, -1 for downvote, 0 for none
-    val createdAt: String? = null
+    val createdAt: String? = null,
+    val authorAvatar: String? = null
 )
 
 val CommunityReportReasons = listOf(
@@ -70,12 +71,10 @@ fun QuestionCard(
     OutlinedCard(onClick = { onClick(question.id) }, modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(Modifier.size(30.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), Alignment.Center) {
-                    Text(if (question.isAnonymous) "?" else question.authorName.firstOrNull()?.uppercase() ?: "S",
-                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                }
+                AuthorAvatar(if (question.isAnonymous) null else question.authorAvatar,
+                    if (question.isAnonymous) "Anonymous" else question.authorName, 28.dp)
                 AuthorByline(if (question.isAnonymous) "Anonymous" else question.authorName, question.createdAt, Modifier.weight(1f))
                 if (onReportClick != null) Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Question options") }
@@ -91,7 +90,7 @@ fun QuestionCard(
             if (question.tags.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 question.tags.forEach { tag -> Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(5.dp)) {
-                    Text("#" + tag, Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    Text("#" + tag, Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } }
             }

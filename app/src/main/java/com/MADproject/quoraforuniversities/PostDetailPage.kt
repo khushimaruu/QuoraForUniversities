@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.MADproject.quoraforuniversities.components.AppHeader
 import com.MADproject.quoraforuniversities.components.AuthorByline
+import com.MADproject.quoraforuniversities.components.AuthorAvatar
 import com.MADproject.quoraforuniversities.components.BottomNavBar
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
@@ -60,7 +61,8 @@ data class ReplyUiModel(
     val parentReplyId: String? = null,
     val upvoteCount: Int = voteCount.coerceAtLeast(0),
     val downvoteCount: Int = 0,
-    val currentUserVote: Int = 0
+    val currentUserVote: Int = 0,
+    val authorAvatar: String? = null
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -117,8 +119,8 @@ fun PostDetailPage(
         ) {
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // FULL QUESTION CARD
                 item {
@@ -131,7 +133,7 @@ fun PostDetailPage(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp)
+                                .padding(12.dp)
                         ) {
                             // Top Row: Author & 3-dots Menu
                             Row(
@@ -139,6 +141,9 @@ fun PostDetailPage(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
+                                AuthorAvatar(if (question.isAnonymous) null else question.authorAvatar,
+                                    if (question.isAnonymous) "Anonymous" else question.authorName, 34.dp)
+                                Spacer(Modifier.width(8.dp))
                                 AuthorByline(
                                     authorName = if (question.isAnonymous) "Anonymous" else question.authorName,
                                     createdAt = question.createdAt,
@@ -180,26 +185,26 @@ fun PostDetailPage(
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
 
                             Text(
                                 text = question.title,
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                lineHeight = 29.sp
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                lineHeight = 26.sp
                             )
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
 
                             Text(
                                 text = question.body,
-                                fontSize = 15.sp,
-                                lineHeight = 23.sp,
+                                fontSize = 14.sp,
+                                lineHeight = 21.sp,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
 
                             if (question.tags.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(14.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
                                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     question.tags.forEach { tag ->
                                         Surface(
@@ -216,20 +221,16 @@ fun PostDetailPage(
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(16.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
                             HorizontalDivider()
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
 
-                            // SEPARATE UPVOTE / DOWNVOTE / ANSWERS / BOOKMARK ROW
-                            Row(
+                            // Keep every action in the same wrapping row on narrow screens.
+                            FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                FlowRow(
-                                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
                                     // UPVOTE
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -280,10 +281,10 @@ fun PostDetailPage(
 
                                     Text(
                                         text = "${replies.size} Answers",
+                                        modifier = Modifier.padding(vertical = 14.dp),
                                         fontSize = 13.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                }
 
                                 if (onBookmarkClick != null) {
                                     IconButton(onClick = { onBookmarkClick(question.id) }) {
@@ -502,12 +503,12 @@ fun ReplyCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(15.dp)
+                .padding(12.dp)
         ) {
-            AuthorByline(
-                authorName = reply.authorName,
-                createdAt = reply.createdAt
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AuthorAvatar(reply.authorAvatar, reply.authorName, 30.dp)
+                AuthorByline(authorName = reply.authorName, createdAt = reply.createdAt)
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 

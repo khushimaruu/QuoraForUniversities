@@ -1,11 +1,8 @@
 package com.MADproject.quoraforuniversities.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -18,15 +15,13 @@ fun AppHeader(modifier: Modifier = Modifier, subtitle: String? = null, onBackCli
     Surface(modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface) {
         Column {
             Row(Modifier.statusBarsPadding().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                .readingWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                .readingWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (onBackClick != null) IconButton(onClick = onBackClick) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
-                } else Box(Modifier.size(36.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp)), Alignment.Center) {
-                    Icon(Icons.Outlined.Forum, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
-                }
+                } else BrandMark(32.dp)
                 Column(Modifier.weight(1f)) {
-                    Text(subtitle ?: "CampusCircle", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(subtitle ?: "CampusCircle", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     if (subtitle == null) Text("Your university community", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

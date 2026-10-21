@@ -209,7 +209,8 @@ fun PostWithProfileDto.toUiModel(
         upvoteCount = upvoteCount,
         downvoteCount = downvoteCount,
         currentUserVote = currentUserVote,
-        createdAt = createdAt
+        createdAt = createdAt,
+        authorAvatar = if (isAnonymous) null else profiles?.avatarUrl
     )
 }
 
@@ -246,6 +247,7 @@ fun ReplyWithProfileDto.toUiModel(
         parentReplyId = parentReplyId,
         upvoteCount = upvoteCount,
         downvoteCount = downvoteCount,
-        currentUserVote = currentUserVote
+        currentUserVote = currentUserVote,
+        authorAvatar = profiles?.avatarUrl
     )
 }

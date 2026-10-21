@@ -37,6 +37,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,7 +55,9 @@ import com.MADproject.quoraforuniversities.data.AuthRepository
 import com.MADproject.quoraforuniversities.data.ProfileDto
 import com.MADproject.quoraforuniversities.data.ProfileRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,6 +78,7 @@ fun ProfileScreen(
     onBookmarkClick: (String) -> Unit = {},
     onReportClick: (String, String) -> Unit = { _, _ -> },
     onSavedPostsClick: () -> Unit = {},
+    onPhotoSaved: () -> Unit = {},
     onLogOutClick: () -> Unit = {},
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
 ) {
@@ -134,23 +140,22 @@ fun ProfileScreen(
             inputStream?.close()
 
             if (originalBitmap != null) {
-                profileBitmap = originalBitmap
                 isUploadingPhoto = true
+                profileError = null
                 scope.launch {
-                    val base64Photo = bitmapToBase64(originalBitmap)
-                    val uid = authRepository.getCurrentUserId() ?: ""
-                    val currentProfile = profile ?: ProfileDto(
-                        id = uid,
-                        username = username,
-                        name = name
-                    )
-                    val updatedProfile = currentProfile.copy(avatarUrl = base64Photo)
-                    val res = profileRepository.updateProfile(updatedProfile)
-                    isUploadingPhoto = false
-                    if (res.isSuccess) {
+                    try {
+                        val base64Photo = withContext(Dispatchers.Default) { bitmapToBase64(originalBitmap) }
+                        val uid = authRepository.getCurrentUserId() ?: error("Not signed in")
+                        val currentProfile = profile ?: ProfileDto(id = uid, username = username, name = name)
+                        val updatedProfile = currentProfile.copy(avatarUrl = base64Photo)
+                        profileRepository.updateProfile(updatedProfile).getOrThrow()
                         profile = updatedProfile
-                    } else {
+                        profileBitmap = originalBitmap
+                        onPhotoSaved()
+                    } catch (error: Exception) {
                         profileError = "Could not save your profile photo. Please try again."
+                    } finally {
+                        isUploadingPhoto = false
                     }
                 }
             }
@@ -259,40 +264,80 @@ internal fun ProfileContent(
     val listState = rememberLazyListState()
     Scaffold(topBar = { AppHeader() }, bottomBar = { BottomNavBar(BottomNavDestination.PROFILE.route, onNavDestinationSelected) }) { padding ->
         LazyColumn(Modifier.padding(padding).consumeWindowInsets(padding).readingWidth(), state = listState,
-            contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(58.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer)
-                        .clickable(enabled = !uploading, onClick = onPhotoClick), Alignment.Center) {
-                        if (profileBitmap != null) Image(profileBitmap.asImageBitmap(), "Change profile photo",
-                            Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        else Text(name.firstOrNull()?.uppercase() ?: "S", style = MaterialTheme.typography.headlineSmall,
-                            color = MaterialTheme.colorScheme.primary)
+                Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer)
+                            .clickable(enabled = !uploading, onClick = onPhotoClick), Alignment.Center) {
+                            if (profileBitmap != null) Image(profileBitmap.asImageBitmap(), "Change profile photo",
+                                Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                            else Text(name.firstOrNull()?.uppercase() ?: "S", style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.primary)
+                            if (uploading) {
+                                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)), Alignment.Center) {
+                                    CircularProgressIndicator(Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                                }
+                            }
+                        }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("@" + username, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        TextButton(onClick = onBioClick, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                            Icon(Icons.Default.Edit, null, Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Edit", style = MaterialTheme.typography.labelMedium)
+                        }
                     }
-                    Column(Modifier.weight(1f)) {
-                        Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text("@" + username, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                        Text(bio, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    OutlinedButton(onClick = onBioClick, contentPadding = PaddingValues(horizontal = 10.dp)) {
-                        Icon(Icons.Default.Edit, null, Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("Edit", style = MaterialTheme.typography.labelMedium)
+                    Text(bio, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        TextButton(onClick = onPhotoClick, enabled = !uploading,
+                            contentPadding = PaddingValues(horizontal = 4.dp)) {
+                            if (uploading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Default.PhotoCamera, null, Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (uploading) "Saving photo…" else "Change photo",
+                                style = MaterialTheme.typography.labelMedium)
+                        }
+                        if (email.isNotBlank()) Text(email, modifier = Modifier.padding(vertical = 11.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
-            item { FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                TextButton(onClick = onPhotoClick, enabled = !uploading) { Text(if (uploading) "Saving photo…" else "Change photo", style = MaterialTheme.typography.labelSmall) }
-                if (email.isNotBlank()) Text(email, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } }
             if (error != null) item { ErrorBanner(error) }
             item {
-                SecondaryTabRow(selectedTabIndex = listOf("Saved Questions", "My Questions", "Answers").indexOf(selectedTab),
-                    containerColor = MaterialTheme.colorScheme.background) {
-                    listOf("Saved Questions" to savedCount, "My Questions" to userPosts.size, "Answers" to userAnswers.size).forEach { (label, count) ->
-                        Tab(selected = selectedTab == label, onClick = {
-                            selectedTab = label
-                            if (label == "Saved Questions") onSavedPostsClick()
-                        }, text = { Text(label + " " + count, style = MaterialTheme.typography.labelSmall) })
+                Column {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        listOf("Saved Questions" to savedCount, "My Questions" to userPosts.size,
+                            "Answers" to userAnswers.size).forEach { (label, count) ->
+                            val active = selectedTab == label
+                            Column(Modifier.semantics { selected = active }.clickable {
+                                selectedTab = label
+                                if (label == "Saved Questions") onSavedPostsClick()
+                            }.padding(horizontal = 6.dp)) {
+                                Row(Modifier.heightIn(min = 42.dp), verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(label, style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                                        color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1)
+                                    Text(count.toString(), style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Box(Modifier.fillMaxWidth().height(2.dp).background(
+                                    if (active) MaterialTheme.colorScheme.primary else Color.Transparent))
+                            }
+                        }
                     }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
             item { Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

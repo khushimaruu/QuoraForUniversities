@@ -11,7 +11,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material3.*
@@ -32,9 +31,7 @@ fun LandingPage(onLoginClick: () -> Unit = {}, onSignUpClick: () -> Unit = {}) {
         Column(Modifier.safeDrawingPadding().readingWidth(520.dp).verticalScroll(rememberScrollState())
             .padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.primary) {
-                    Icon(Icons.Outlined.Forum, null, Modifier.padding(9.dp).size(20.dp), tint = MaterialTheme.colorScheme.onPrimary)
-                }
+                BrandMark(38.dp)
                 Text("CAMPUSCIRCLE", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

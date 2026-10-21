@@ -572,6 +572,11 @@ fun CampusQnAApp(
                             onBookmarkClick = { toggleBookmark(it) },
                             onReportClick = { id, reason -> handleReportPost(id, reason) },
                             onSavedPostsClick = { refreshSavedPosts() },
+                            onPhotoSaved = {
+                                refreshQuestions()
+                                refreshSavedPosts()
+                                refreshUserPosts()
+                            },
                             onLogOutClick = {
                                 searchQuery = ""
                                 searchResults = emptyList()
