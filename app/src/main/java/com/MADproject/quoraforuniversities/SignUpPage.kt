@@ -1,388 +1,61 @@
 package com.MADproject.quoraforuniversities
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.MADproject.quoraforuniversities.components.ErrorBanner
-import com.MADproject.quoraforuniversities.components.formatAuthErrorMessage
+import com.MADproject.quoraforuniversities.components.*
 import com.MADproject.quoraforuniversities.data.AuthRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SignUpPage(
-    authRepository: AuthRepository = remember { AuthRepository() },
-    onBackClick: () -> Unit = {},
-    onSignUpSuccess: () -> Unit = {},
-    onNavigateToLogin: () -> Unit = {}
-) {
-    var fullName by remember { mutableStateOf("") }
-    var universityName by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) }
-    var confirmPasswordVisible by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
-
+fun SignUpPage(authRepository: AuthRepository? = null, onBackClick: () -> Unit = {},
+               onSignUpSuccess: () -> Unit = {}, onNavigateToLogin: () -> Unit = {}) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var university by rememberSaveable { mutableStateOf("") }
+    var email by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var confirmation by rememberSaveable { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val focusManager = LocalFocusManager.current
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {},
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
+    fun submit() {
+        if (busy) return
+        val address = email.trim().lowercase()
+        val secret = password.trim()
+        error = when {
+            name.isBlank() || university.isBlank() || address.isBlank() || secret.isBlank() -> "Please fill in all required fields."
+            !address.endsWith("@nmims.in") || address.length <= "@nmims.in".length || address.startsWith("@") ->
+                "Only NMIMS email addresses ending with @nmims.in are allowed."
+            secret.length < 6 -> "Password must be at least 6 characters long."
+            secret != confirmation.trim() -> "Passwords do not match."
+            else -> null
         }
-    ) { paddingValues ->
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
-            color = MaterialTheme.colorScheme.background
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .navigationBarsPadding()
-                    .imePadding()
-                    .padding(horizontal = 28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(
-                    text = "Join CampusCircle",
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Connect with students and professors from NMIMS",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(28.dp))
-
-                // Full Name
-                OutlinedTextField(
-                    value = fullName,
-                    onValueChange = {
-                        fullName = it
-                        errorMessage = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Full Name") },
-                    placeholder = { Text("e.g. Khushi Maru") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text,
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // University / College
-                OutlinedTextField(
-                    value = universityName,
-                    onValueChange = {
-                        universityName = it
-                        errorMessage = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("School / College Name") },
-                    placeholder = { Text("e.g. MPSTME, NMIMS") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.School,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text,
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // University Email (Strictly @nmims.in)
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = {
-                        email = it
-                        errorMessage = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("NMIMS Email (@nmims.in)") },
-                    placeholder = { Text("student@nmims.in") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Email,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Email,
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Password
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = {
-                        password = it
-                        errorMessage = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Password") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    trailingIcon = {
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(
-                                imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                contentDescription = if (passwordVisible) "Hide password" else "Show password"
-                            )
-                        }
-                    },
-                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Confirm Password
-                OutlinedTextField(
-                    value = confirmPassword,
-                    onValueChange = {
-                        confirmPassword = it
-                        errorMessage = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Confirm Password") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    trailingIcon = {
-                        IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
-                            Icon(
-                                imageVector = if (confirmPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                contentDescription = if (confirmPasswordVisible) "Hide password" else "Show password"
-                            )
-                        }
-                    },
-                    visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = { focusManager.clearFocus() }
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                errorMessage?.let { msg ->
-                    Spacer(modifier = Modifier.height(16.dp))
-                    ErrorBanner(message = msg)
-                }
-
-                Spacer(modifier = Modifier.height(28.dp))
-
-                // Sign Up Button
-                Button(
-                    onClick = {
-                        val trimmedName = fullName.trim()
-                        val trimmedUniversity = universityName.trim()
-                        val trimmedEmail = email.trim().lowercase()
-                        val trimmedPassword = password.trim()
-                        val trimmedConfirmPassword = confirmPassword.trim()
-
-                        // Strictly validate @nmims.in only
-                        val isNmimsEmail = trimmedEmail.endsWith("@nmims.in") &&
-                                trimmedEmail.length > "@nmims.in".length &&
-                                !trimmedEmail.startsWith("@")
-
-                        when {
-                            trimmedName.isBlank() || trimmedUniversity.isBlank() || trimmedEmail.isBlank() || trimmedPassword.isBlank() -> {
-                                errorMessage = "Please fill in all required fields."
-                            }
-                            !isNmimsEmail -> {
-                                errorMessage = "Only NMIMS email addresses ending with @nmims.in are allowed."
-                            }
-                            trimmedPassword.length < 6 -> {
-                                errorMessage = "Password must be at least 6 characters long."
-                            }
-                            trimmedPassword != trimmedConfirmPassword -> {
-                                errorMessage = "Passwords do not match."
-                            }
-                            else -> {
-                                isLoading = true
-                                errorMessage = null
-                                scope.launch {
-                                    val result = authRepository.signUp(
-                                        emailVal = trimmedEmail,
-                                        passwordVal = trimmedPassword,
-                                        fullNameVal = trimmedName,
-                                        collegeVal = trimmedUniversity,
-                                        bioVal = null
-                                    )
-                                    isLoading = false
-                                    if (result.isSuccess) {
-                                        onSignUpSuccess()
-                                    } else {
-                                        errorMessage = formatAuthErrorMessage(
-                                            result.exceptionOrNull(),
-                                            "Sign up failed. Please check your details and try again."
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    enabled = !isLoading,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text(
-                            text = "Create Account",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Already have account
-                Row(
-                    modifier = Modifier.padding(bottom = 24.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Already have an account? ",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "Log In",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.clickable { onNavigateToLogin() }
-                    )
-                }
-            }
+        if (error != null) return
+        busy = true
+        scope.launch {
+            try {
+                (authRepository ?: AuthRepository()).signUp(emailVal = address, passwordVal = secret,
+                    fullNameVal = name.trim(), collegeVal = university.trim(), bioVal = null)
+                    .onSuccess { onSignUpSuccess() }
+                    .onFailure { error = formatAuthErrorMessage(it, "Sign up failed. Please check your details and try again.") }
+            } finally { busy = false }
         }
     }
+    CampusAuthPage(true, listOf(
+        CampusAuthField("name", "Full name", "Your full name"),
+        CampusAuthField("university", "Campus institution", "Your university / college"),
+        CampusAuthField("email", "Campus email", "you@nmims.in", KeyboardType.Email),
+        CampusAuthField("password", "Password", "At least 6 characters", KeyboardType.Password, true),
+        CampusAuthField("confirmation", "Confirm password", "Your password, once more", KeyboardType.Password, true)),
+        mapOf("name" to name, "university" to university, "email" to email, "password" to password, "confirmation" to confirmation),
+        { key, value -> when (key) { "name" -> name = value; "university" -> university = value
+            "email" -> email = value; "password" -> password = value; "confirmation" -> confirmation = value }; error = null },
+        busy, error, ::submit, onNavigateToLogin, onBackClick)
 }
 
-@Preview(showBackground = true)
+@Preview(name = "Sign up · compact", widthDp = 320, heightDp = 640, showBackground = true)
+@Preview(name = "Sign up · large text", widthDp = 430, heightDp = 932, fontScale = 1.5f, showBackground = true)
 @Composable
-fun SignUpPagePreview() {
-    CampusQnATheme {
-        SignUpPage()
-    }
-}
+fun SignUpPagePreview() { CampusQnATheme { SignUpPage() } }

@@ -5,12 +5,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.SystemBarStyle
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -32,6 +34,7 @@ import com.MADproject.quoraforuniversities.components.QuestionUiModel
 import com.MADproject.quoraforuniversities.components.SplashScreen
 import com.MADproject.quoraforuniversities.data.AuthRepository
 import com.MADproject.quoraforuniversities.data.PostRepository
+import com.MADproject.quoraforuniversities.data.ProfileAnswerUiModel
 import com.MADproject.quoraforuniversities.data.ProfileRepository
 import com.MADproject.quoraforuniversities.ui.addpost.AddPostScreen
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
@@ -45,7 +48,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.BLACK)
+        )
         setContent {
             CampusQnATheme {
                 CampusQnAApp()
@@ -79,6 +85,7 @@ fun CampusQnAApp(
     var selectedQuestion by remember { mutableStateOf<QuestionUiModel?>(null) }
     var questions by remember { mutableStateOf<List<QuestionUiModel>>(emptyList()) }
     var isFeedLoading by remember { mutableStateOf(false) }
+    var feedError by remember { mutableStateOf<String?>(null) }
     var replies by remember { mutableStateOf<List<ReplyUiModel>>(emptyList()) }
     var repliesForPostId by remember { mutableStateOf<String?>(null) }
     var repliesRequestVersion by remember { mutableLongStateOf(0L) }
@@ -88,6 +95,9 @@ fun CampusQnAApp(
 
     var userCreatedPosts by remember { mutableStateOf<List<QuestionUiModel>>(emptyList()) }
     var isUserPostsLoading by remember { mutableStateOf(false) }
+    var userAnswers by remember { mutableStateOf<List<ProfileAnswerUiModel>>(emptyList()) }
+    var isUserAnswersLoading by remember { mutableStateOf(false) }
+    var postingName by remember { mutableStateOf("Your profile") }
 
     fun refreshSavedPosts() {
         scope.launch {
@@ -107,23 +117,31 @@ fun CampusQnAApp(
     fun refreshUserPosts() {
         scope.launch {
             val uid = authRepository.getCurrentUserId() ?: return@launch
+            profileRepository.getProfile(uid).onSuccess { postingName = it?.name ?: it?.username ?: "Your profile" }
             isUserPostsLoading = true
             val res = profileRepository.getUserPosts(uid)
             isUserPostsLoading = false
             if (res.isSuccess) {
                 userCreatedPosts = res.getOrDefault(emptyList())
+            } else {
+                snackbarHostState.showSnackbar("Couldn't load your questions. Please try opening your profile again.")
             }
+            isUserAnswersLoading = true
+            profileRepository.getUserAnswers(uid).onSuccess { userAnswers = it }
+                .onFailure { snackbarHostState.showSnackbar("Couldn't load your answers. Please try again.") }
+            isUserAnswersLoading = false
         }
     }
 
     fun toggleBookmark(postId: String) {
         scope.launch {
-            if (savedPostIds.contains(postId)) {
+            val result = if (savedPostIds.contains(postId)) {
                 postRepository.unbookmarkPost(postId)
             } else {
                 postRepository.bookmarkPost(postId)
             }
-            refreshSavedPosts()
+            if (result.isSuccess) refreshSavedPosts()
+            else snackbarHostState.showSnackbar("Couldn't update your saved questions. Please try again.")
         }
     }
 
@@ -137,6 +155,7 @@ fun CampusQnAApp(
             if (result.isSuccess) {
                 val updatedList = result.getOrDefault(emptyList())
                 questions = updatedList
+                feedError = null
                 // Refresh cached search data after real feed changes, never just on returning.
                 searchRefreshVersion++
                 selectedQuestion?.let { currentSq ->
@@ -145,6 +164,8 @@ fun CampusQnAApp(
                         selectedQuestion = updatedSq
                     }
                 }
+            } else {
+                feedError = "Check your connection and try again."
             }
         }
     }
@@ -159,6 +180,8 @@ fun CampusQnAApp(
             val result = postRepository.getReplies(postId)
             if (result.isSuccess && selectedQuestion?.id == postId && requestVersion == repliesRequestVersion) {
                 replies = result.getOrDefault(emptyList())
+            } else if (result.isFailure && selectedQuestion?.id == postId && requestVersion == repliesRequestVersion) {
+                snackbarHostState.showSnackbar("Couldn't load answers. Please reopen this question to try again.")
             }
         }
     }
@@ -321,6 +344,10 @@ fun CampusQnAApp(
         isSearching = false
     }
 
+    LaunchedEffect(currentScreen) {
+        if (currentScreen == "profile") { refreshSavedPosts(); refreshUserPosts() }
+    }
+
     LaunchedEffect(Unit) {
         refreshQuestions()
         if (authRepository.isLoggedIn()) {
@@ -342,6 +369,7 @@ fun CampusQnAApp(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = {
             SnackbarHost(
                 hostState = snackbarHostState,
@@ -406,6 +434,8 @@ fun CampusQnAApp(
                         HomeScreen(
                             questions = questions,
                             isLoading = isFeedLoading,
+                            error = feedError,
+                            onRetry = { refreshQuestions() },
                             savedPostIds = savedPostIds,
                             onQuestionClick = { questionId ->
                                 postReturnScreen = "home"
@@ -423,6 +453,7 @@ fun CampusQnAApp(
                                     BottomNavDestination.SEARCH -> currentScreen = "search"
                                     BottomNavDestination.PROFILE -> currentScreen = "profile"
                                     BottomNavDestination.ADD_POST -> currentScreen = "add_post"
+                                    BottomNavDestination.SAVED -> { refreshSavedPosts(); currentScreen = "saved_posts" }
                                 }
                             }
                         )
@@ -444,6 +475,7 @@ fun CampusQnAApp(
                                 currentScreen = "post"
                             },
                             onUpvoteClick = { questionId -> handleUpvote(questionId) },
+                            onDownvoteClick = { questionId -> handleDownvote(questionId) },
                             onBookmarkClick = { questionId -> toggleBookmark(questionId) },
                             onReportClick = { postId, reason -> handleReportPost(postId, reason) },
                             onNavDestinationSelected = { destination ->
@@ -452,6 +484,7 @@ fun CampusQnAApp(
                                     BottomNavDestination.SEARCH -> currentScreen = "search"
                                     BottomNavDestination.PROFILE -> currentScreen = "profile"
                                     BottomNavDestination.ADD_POST -> currentScreen = "add_post"
+                                    BottomNavDestination.SAVED -> { refreshSavedPosts(); currentScreen = "saved_posts" }
                                 }
                             }
                         )
@@ -462,6 +495,7 @@ fun CampusQnAApp(
                             PostDetailPage(
                                 question = question,
                                 replies = replies,
+                                replyAuthorName = postingName,
                                 isBookmarked = savedPostIds.contains(question.id),
                                 onBackClick = { currentScreen = postReturnScreen },
                                 onUpvoteClick = { handleUpvote(question.id) },
@@ -504,13 +538,14 @@ fun CampusQnAApp(
                                         BottomNavDestination.SEARCH -> currentScreen = "search"
                                         BottomNavDestination.PROFILE -> currentScreen = "profile"
                                         BottomNavDestination.ADD_POST -> currentScreen = "add_post"
+                                    BottomNavDestination.SAVED -> { refreshSavedPosts(); currentScreen = "saved_posts" }
                                     }
                                 }
                             )
                         }
                     }
 
-                    "profile" -> {
+                    "profile" -> listScreenState.SaveableStateProvider("profile") {
                         ProfileScreen(
                             authRepository = authRepository,
                             profileRepository = profileRepository,
@@ -518,11 +553,15 @@ fun CampusQnAApp(
                             savedPostIds = savedPostIds,
                             userPosts = userCreatedPosts,
                             isLoadingPosts = isUserPostsLoading,
+                            savedQuestions = savedQuestions,
+                            userAnswers = userAnswers,
+                            isLoadingAnswers = isUserAnswersLoading,
                             onQuestionClick = { questionId ->
-                                postReturnScreen = "home"
+                                postReturnScreen = "profile"
                                 selectedQuestion = questions.find { it.id == questionId }
                                     ?: savedQuestions.find { it.id == questionId }
                                             ?: userCreatedPosts.find { it.id == questionId }
+                                            ?: userAnswers.find { it.question.id == questionId }?.question
                                 if (selectedQuestion != null) {
                                     refreshReplies(questionId)
                                     currentScreen = "post"
@@ -532,10 +571,7 @@ fun CampusQnAApp(
                             onDownvoteClick = { handleDownvote(it) },
                             onBookmarkClick = { toggleBookmark(it) },
                             onReportClick = { id, reason -> handleReportPost(id, reason) },
-                            onSavedPostsClick = {
-                                refreshSavedPosts()
-                                currentScreen = "saved_posts"
-                            },
+                            onSavedPostsClick = { refreshSavedPosts() },
                             onLogOutClick = {
                                 searchQuery = ""
                                 searchResults = emptyList()
@@ -547,6 +583,7 @@ fun CampusQnAApp(
                                     BottomNavDestination.SEARCH -> currentScreen = "search"
                                     BottomNavDestination.PROFILE -> currentScreen = "profile"
                                     BottomNavDestination.ADD_POST -> currentScreen = "add_post"
+                                    BottomNavDestination.SAVED -> { refreshSavedPosts(); currentScreen = "saved_posts" }
                                 }
                             }
                         )
@@ -558,16 +595,18 @@ fun CampusQnAApp(
                             savedPostIds = savedPostIds,
                             isLoading = isSavedLoading,
                             onQuestionClick = { questionId ->
-                                postReturnScreen = "home"
+                                postReturnScreen = "saved_posts"
                                 selectedQuestion = questions.find { it.id == questionId }
                                     ?: savedQuestions.find { it.id == questionId }
                                             ?: userCreatedPosts.find { it.id == questionId }
+                                            ?: userAnswers.find { it.question.id == questionId }?.question
                                 if (selectedQuestion != null) {
                                     refreshReplies(questionId)
                                     currentScreen = "post"
                                 }
                             },
                             onUpvoteClick = { questionId -> handleUpvote(questionId) },
+                            onDownvoteClick = { questionId -> handleDownvote(questionId) },
                             onBookmarkClick = { questionId -> toggleBookmark(questionId) },
                             onReportClick = { postId, reason -> handleReportPost(postId, reason) },
                             onBackClick = { currentScreen = "profile" },
@@ -577,6 +616,7 @@ fun CampusQnAApp(
                                     BottomNavDestination.SEARCH -> currentScreen = "search"
                                     BottomNavDestination.PROFILE -> currentScreen = "profile"
                                     BottomNavDestination.ADD_POST -> currentScreen = "add_post"
+                                    BottomNavDestination.SAVED -> { refreshSavedPosts(); currentScreen = "saved_posts" }
                                 }
                             }
                         )
@@ -585,6 +625,7 @@ fun CampusQnAApp(
                     "add_post" -> {
                         AddPostScreen(
                             postRepository = postRepository,
+                            profileName = postingName,
                             onBack = { currentScreen = "home" },
                             onPosted = {
                                 refreshQuestions()

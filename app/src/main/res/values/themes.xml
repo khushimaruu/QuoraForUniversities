@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.QuoraForUniversities" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.QuoraForUniversities" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#F6F8F7</item>
+        <item name="android:colorAccent">#0D5945</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
 </resources>

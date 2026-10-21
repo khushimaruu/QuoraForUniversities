@@ -1,5 +1,10 @@
 package com.MADproject.quoraforuniversities
 
+import androidx.compose.foundation.background
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import com.MADproject.quoraforuniversities.utils.ReplyOrder
+import com.MADproject.quoraforuniversities.utils.orderReplyThreads
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,13 +15,14 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OutlinedFlag
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.*
+import com.MADproject.quoraforuniversities.components.readingWidth
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -57,33 +63,14 @@ data class ReplyUiModel(
     val currentUserVote: Int = 0
 )
 
-/** Keep each thread contiguous in one LazyColumn, with only one visual indent. */
-private fun arrangeReplies(replies: List<ReplyUiModel>): List<Pair<ReplyUiModel, Boolean>> {
-    val ids = replies.map { it.id }.toSet()
-    val children = replies.groupBy { it.parentReplyId }
-    val visited = mutableSetOf<String>()
-    val rows = mutableListOf<Pair<ReplyUiModel, Boolean>>()
-    fun appendThread(root: ReplyUiModel) {
-        val pending = mutableListOf(root to false)
-        while (pending.isNotEmpty()) {
-            val row = pending.removeAt(pending.lastIndex)
-            if (!visited.add(row.first.id)) continue
-            rows += row
-            children[row.first.id].orEmpty().asReversed().forEach { pending += it to true }
-        }
-    }
-    replies.filter { it.parentReplyId == null || it.parentReplyId !in ids }.forEach(::appendThread)
-    // Preserve all loaded rows even if a parent is hidden or legacy data is cyclic.
-    replies.filter { it.id !in visited }.forEach(::appendThread)
-    return rows
-}
-
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PostDetailPage(
     question: QuestionUiModel,
     replies: List<ReplyUiModel>,
     geminiService: GeminiService = remember { GeminiService() },
     isBookmarked: Boolean = false,
+    replyAuthorName: String = "Your profile",
     onBackClick: () -> Unit = {},
     onUpvoteClick: () -> Unit = {},
     onDownvoteClick: () -> Unit = {},
@@ -98,7 +85,8 @@ fun PostDetailPage(
     }
     val replyFocusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    val replyRows = remember(replies) { arrangeReplies(replies) }
+    var replyOrder by rememberSaveable(question.id) { mutableStateOf(ReplyOrder.TOP) }
+    val replyRows = remember(replies, replyOrder) { orderReplyThreads(replies, replyOrder) }
     var selectedParentId by rememberSaveable(question.id) { mutableStateOf<String?>(null) }
     var selectedParentUsername by rememberSaveable(question.id) { mutableStateOf<String?>(null) }
     var pendingVotes by remember(question.id) { mutableStateOf(emptySet<String>()) }
@@ -109,7 +97,7 @@ fun PostDetailPage(
     val scope = rememberCoroutineScope()
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             AppHeader(subtitle = "Question Details", onBackClick = onBackClick)
         },
@@ -124,6 +112,8 @@ fun PostDetailPage(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
+                .readingWidth()
         ) {
             LazyColumn(
                 modifier = Modifier.weight(1f),
@@ -135,7 +125,7 @@ fun PostDetailPage(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                     ) {
                         Column(
@@ -210,7 +200,7 @@ fun PostDetailPage(
 
                             if (question.tags.isNotEmpty()) {
                                 Spacer(modifier = Modifier.height(14.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     question.tags.forEach { tag ->
                                         Surface(
                                             shape = RoundedCornerShape(6.dp),
@@ -236,9 +226,9 @@ fun PostDetailPage(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                FlowRow(
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     // UPVOTE
                                     Row(
@@ -246,6 +236,7 @@ fun PostDetailPage(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(6.dp))
                                             .clickable { onUpvoteClick() }
+                                            .heightIn(min = 44.dp)
                                             .padding(horizontal = 4.dp, vertical = 4.dp)
                                     ) {
                                         Icon(
@@ -269,6 +260,7 @@ fun PostDetailPage(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(6.dp))
                                             .clickable { onDownvoteClick() }
+                                            .heightIn(min = 44.dp)
                                             .padding(horizontal = 4.dp, vertical = 4.dp)
                                     ) {
                                         Icon(
@@ -307,13 +299,23 @@ fun PostDetailPage(
                     }
                 }
 
-                // ANSWERS HEADER
+                // Sort controls stay local to this question and preserve each reply thread.
                 item {
-                    Text(
-                        text = "${replies.size} Answers",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(replies.size.toString() + " Answers", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Row(Modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+                            listOf(ReplyOrder.TOP to "Top", ReplyOrder.NEWEST to "Newest").forEach { (order, label) ->
+                                TextButton(onClick = { replyOrder = order },
+                                    modifier = Modifier.semantics { selected = replyOrder == order },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    colors = ButtonDefaults.textButtonColors(containerColor = if (replyOrder == order)
+                                        MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant)) {
+                                    Text(label, style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // REPLIES LIST
@@ -418,7 +420,7 @@ fun PostDetailPage(
 
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        IconButton(
+                        FilledIconButton(
                             enabled = replyText.text.isNotBlank() && !isSubmitting,
                             onClick = {
                                 if (replyText.text.isNotBlank() && !isSubmitting) {
@@ -459,10 +461,12 @@ fun PostDetailPage(
                             if (isSubmitting) {
                                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                             } else {
-                                Icon(imageVector = Icons.Default.Send, contentDescription = "Send")
+                                Icon(imageVector = Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
                             }
                         }
                     }
+                    Text("●  Posting as " + replyAuthorName, Modifier.padding(top = 6.dp, start = 4.dp),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                 }
             }
         }
@@ -479,6 +483,7 @@ fun PostDetailPage(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReplyCard(
     reply: ReplyUiModel,
@@ -488,10 +493,10 @@ fun ReplyCard(
     onVoteClick: (Int) -> Unit = {},
     onReplyClick: () -> Unit = {}
 ) {
-    Card(
+    OutlinedCard(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
@@ -523,7 +528,7 @@ fun ReplyCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(
                     onClick = { onVoteClick(1) }, enabled = voteEnabled,
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)

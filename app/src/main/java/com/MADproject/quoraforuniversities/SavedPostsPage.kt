@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material3.*
+import com.MADproject.quoraforuniversities.components.readingWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,6 +29,7 @@ fun SavedPostsPage(
     isLoading: Boolean = false,
     onQuestionClick: (String) -> Unit = {},
     onUpvoteClick: (String) -> Unit = {},
+    onDownvoteClick: (String) -> Unit = {},
     onBookmarkClick: (String) -> Unit = {},
     onReportClick: ((postId: String, reason: String) -> Unit)? = null,
     onBackClick: () -> Unit = {},
@@ -37,30 +39,10 @@ fun SavedPostsPage(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.statusBars)
-            ) {
-                AppHeader(subtitle = "Saved Posts")
-                IconButton(
-                    onClick = onBackClick,
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = 12.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White
-                    )
-                }
-            }
-        },
+        topBar = { AppHeader(subtitle = "Saved questions", onBackClick = onBackClick) },
         bottomBar = {
             BottomNavBar(
-                currentRoute = BottomNavDestination.PROFILE.route,
+                currentRoute = BottomNavDestination.SAVED.route,
                 onDestinationSelected = onNavDestinationSelected
             )
         }
@@ -70,7 +52,8 @@ fun SavedPostsPage(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
                 .padding(innerPadding)
-                .navigationBarsPadding()
+                .consumeWindowInsets(innerPadding)
+                .readingWidth()
                 .imePadding()
         ) {
             when {
@@ -118,6 +101,7 @@ fun SavedPostsPage(
                                 question = question,
                                 onClick = onQuestionClick,
                                 onUpvoteClick = onUpvoteClick,
+                                onDownvoteClick = onDownvoteClick,
                                 onBookmarkClick = onBookmarkClick,
                                 onReportClick = onReportClick,
                                 isBookmarked = savedPostIds.contains(question.id)

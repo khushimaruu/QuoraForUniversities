@@ -1,6 +1,8 @@
 package com.MADproject.quoraforuniversities.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -55,257 +57,74 @@ val CommunityReportReasons = listOf(
 /**
  * Reusable post card with separate Like/Dislike, 3-dots overflow menu, and Reporting.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun QuestionCard(
-    question: QuestionUiModel,
-    onClick: (String) -> Unit,
-    onUpvoteClick: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    onDownvoteClick: ((String) -> Unit)? = null,
-    onBookmarkClick: ((String) -> Unit)? = null,
-    onReportClick: ((postId: String, reason: String) -> Unit)? = null,
+    question: QuestionUiModel, onClick: (String) -> Unit, onUpvoteClick: (String) -> Unit,
+    modifier: Modifier = Modifier, onDownvoteClick: ((String) -> Unit)? = null,
+    onBookmarkClick: ((String) -> Unit)? = null, onReportClick: ((String, String) -> Unit)? = null,
     isBookmarked: Boolean = false
 ) {
-    var showMenu by remember { mutableStateOf(false) }
-    var showReportDialog by remember { mutableStateOf(false) }
-
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable { onClick(question.id) },
+    var menu by remember { mutableStateOf(false) }
+    var report by remember { mutableStateOf(false) }
+    OutlinedCard(onClick = { onClick(question.id) }, modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-
-            // Author row + 3-dots overflow menu
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    val avatarBrush = if (question.isAnonymous) {
-                        Brush.linearGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.surfaceVariant,
-                                MaterialTheme.colorScheme.surfaceVariant
-                            )
-                        )
-                    } else {
-                        Brush.linearGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.primary,
-                                MaterialTheme.colorScheme.secondary
-                            )
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(avatarBrush),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = if (question.isAnonymous) "?" else question.authorName.firstOrNull()?.uppercase() ?: "U",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = if (question.isAnonymous)
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            else
-                                Color.White
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    AuthorByline(
-                        authorName = if (question.isAnonymous) "Anonymous" else question.authorName,
-                        createdAt = question.createdAt,
-                        modifier = Modifier.weight(1f)
-                    )
+        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.size(30.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), Alignment.Center) {
+                    Text(if (question.isAnonymous) "?" else question.authorName.firstOrNull()?.uppercase() ?: "S",
+                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }
-
-                // 3-dots menu button
-                Box {
-                    IconButton(
-                        onClick = { showMenu = true },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "More Options",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Report Post", color = MaterialTheme.colorScheme.error) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.OutlinedFlag,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            },
-                            onClick = {
-                                showMenu = false
-                                showReportDialog = true
-                            }
-                        )
+                AuthorByline(if (question.isAnonymous) "Anonymous" else question.authorName, question.createdAt, Modifier.weight(1f))
+                if (onReportClick != null) Box {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Question options") }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("Report question") }, onClick = { menu = false; report = true })
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                text = question.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = question.body,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            if (question.tags.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    question.tags.take(3).forEach { tag ->
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                        ) {
-                            Text(
-                                text = tag,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
+            Text(question.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+                maxLines = 3, overflow = TextOverflow.Ellipsis)
+            if (question.body.isNotBlank()) Text(question.body, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (question.tags.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                question.tags.forEach { tag -> Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(5.dp)) {
+                    Text("#" + tag, Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } }
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 1.dp)
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Footer: Separate Upvote, Downvote, Answers, Bookmark
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    // SEPARATE UPVOTE
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { onUpvoteClick(question.id) }
-                            .padding(horizontal = 4.dp, vertical = 4.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (question.currentUserVote == 1) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                            contentDescription = "Upvote",
-                            modifier = Modifier.size(16.dp),
-                            tint = if (question.currentUserVote == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = question.upvoteCount.toString(),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = if (question.currentUserVote == 1) FontWeight.Bold else FontWeight.SemiBold,
-                            color = if (question.currentUserVote == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-
-                    // SEPARATE DOWNVOTE
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { onDownvoteClick?.invoke(question.id) }
-                            .padding(horizontal = 4.dp, vertical = 4.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (question.currentUserVote == -1) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
-                            contentDescription = "Downvote",
-                            modifier = Modifier.size(16.dp),
-                            tint = if (question.currentUserVote == -1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = question.downvoteCount.toString(),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = if (question.currentUserVote == -1) FontWeight.Bold else FontWeight.SemiBold,
-                            color = if (question.currentUserVote == -1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    // ANSWERS COUNT
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Outlined.ChatBubbleOutline,
-                            contentDescription = "Answers",
-                            modifier = Modifier.size(15.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(
-                            text = "${question.answerCount} answers",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = { onUpvoteClick(question.id) },
+                    colors = ButtonDefaults.textButtonColors(containerColor = if (question.currentUserVote == 1)
+                        MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface),
+                    contentPadding = PaddingValues(horizontal = 10.dp)) {
+                    Icon(if (question.currentUserVote == 1) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                        if (question.currentUserVote == 1) "Remove upvote" else "Upvote", Modifier.size(16.dp))
+                    Spacer(Modifier.width(5.dp)); Text(question.upvoteCount.toString())
                 }
-
-                if (onBookmarkClick != null) {
-                    IconButton(
-                        onClick = { onBookmarkClick(question.id) },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-                            contentDescription = if (isBookmarked) "Unsave" else "Save",
-                            tint = if (isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                if (onDownvoteClick != null) TextButton(onClick = { onDownvoteClick(question.id) },
+                    contentPadding = PaddingValues(horizontal = 10.dp)) {
+                    Icon(if (question.currentUserVote == -1) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
+                        if (question.currentUserVote == -1) "Remove downvote" else "Downvote", Modifier.size(16.dp))
+                    Spacer(Modifier.width(5.dp)); Text(question.downvoteCount.toString())
+                }
+                TextButton(onClick = { onClick(question.id) }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                    Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp)); Text(question.answerCount.toString() + " answers", style = MaterialTheme.typography.labelMedium)
+                }
+                if (onBookmarkClick != null) IconButton(onClick = { onBookmarkClick(question.id) }) {
+                    Icon(if (isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                        if (isBookmarked) "Unsave question" else "Save question", tint = MaterialTheme.colorScheme.primary)
                 }
             }
         }
     }
-
-    if (showReportDialog) {
-        ReportPostDialog(
-            onDismiss = { showReportDialog = false },
-            onConfirmReport = { selectedReason ->
-                showReportDialog = false
-                onReportClick?.invoke(question.id, selectedReason)
-            }
-        )
-    }
+    if (report) ReportPostDialog(onDismiss = { report = false }, onConfirmReport = {
+        report = false; onReportClick?.invoke(question.id, it)
+    })
 }
 
 /**
@@ -332,6 +151,7 @@ fun ReportPostDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(vertical = 4.dp)
             ) {
                 Text(

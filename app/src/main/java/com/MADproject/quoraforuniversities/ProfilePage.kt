@@ -7,6 +7,12 @@ import android.util.Base64
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.MADproject.quoraforuniversities.data.ProfileAnswerUiModel
+import com.MADproject.quoraforuniversities.utils.TimestampFormatter
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,6 +27,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
+import com.MADproject.quoraforuniversities.components.readingWidth
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +40,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.MADproject.quoraforuniversities.components.ErrorBanner
+import com.MADproject.quoraforuniversities.components.SectionCard
+import com.MADproject.quoraforuniversities.components.ScreenMessage
 import com.MADproject.quoraforuniversities.components.AppHeader
 import com.MADproject.quoraforuniversities.components.BottomNavBar
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
@@ -54,6 +64,9 @@ fun ProfileScreen(
     savedPostIds: Set<String> = emptySet(),
     userPosts: List<QuestionUiModel> = emptyList(),
     isLoadingPosts: Boolean = false,
+    savedQuestions: List<QuestionUiModel> = emptyList(),
+    userAnswers: List<ProfileAnswerUiModel> = emptyList(),
+    isLoadingAnswers: Boolean = false,
     onQuestionClick: (String) -> Unit = {},
     onUpvoteClick: (String) -> Unit = {},
     onDownvoteClick: (String) -> Unit = {},
@@ -77,6 +90,7 @@ fun ProfileScreen(
     var showEditBioDialog by remember { mutableStateOf(false) }
     var editedBioText by remember { mutableStateOf("") }
     var isSavingBio by remember { mutableStateOf(false) }
+    var profileError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         val uid = authRepository.getCurrentUserId()
@@ -86,6 +100,7 @@ fun ProfileScreen(
         // Fetch Profile from Supabase
         val fetchedResult = profileRepository.getProfile(uid)
         val fetched = fetchedResult.getOrNull()
+        if (fetchedResult.isFailure) profileError = "Could not load your profile. Check your connection and reopen this page."
         if (fetched != null) {
             profile = fetched
             fetched.avatarUrl?.let { avatarStr ->
@@ -108,9 +123,6 @@ fun ProfileScreen(
     val username = profile?.username ?: emailText.substringBefore("@").ifBlank { "student" }
     val name = profile?.name ?: "Student"
     val bio = profile?.bio?.takeIf { it.isNotBlank() } ?: "No bio added yet. Click edit to add one!"
-
-    // Initial letter for the avatar
-    val initialLetter = (if (name.isNotBlank()) name else username).firstOrNull()?.uppercase() ?: "U"
 
     // Profile photo picker
     val imagePicker = rememberLauncherForActivityResult(
@@ -138,312 +150,28 @@ fun ProfileScreen(
                     if (res.isSuccess) {
                         profile = updatedProfile
                     } else {
-                        Log.e("ProfileScreen", "Failed to upload photo: ${res.exceptionOrNull()?.message}")
+                        profileError = "Could not save your profile photo. Please try again."
                     }
                 }
             }
         }
     }
 
-    Scaffold(
-        topBar = {
-            AppHeader(subtitle = "My Profile")
-        },
-        bottomBar = {
-            BottomNavBar(
-                currentRoute = BottomNavDestination.PROFILE.route,
-                onDestinationSelected = onNavDestinationSelected
-            )
-        }
-    ) { paddingValues ->
-
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(paddingValues),
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-
-            item {
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // ---------------- PROFILE PHOTO / DEFAULT INITIAL AVATAR ----------------
-                Box(
-                    modifier = Modifier.size(120.dp),
-                    contentAlignment = Alignment.BottomEnd
-                ) {
-                    if (profileBitmap != null) {
-                        Image(
-                            bitmap = profileBitmap!!.asImageBitmap(),
-                            contentDescription = "Profile Photo",
-                            modifier = Modifier
-                                .size(120.dp)
-                                .clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        // Default initial letter avatar
-                        Box(
-                            modifier = Modifier
-                                .size(120.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = initialLetter,
-                                fontSize = 48.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-                    }
-
-                    if (isUploadingPhoto) {
-                        Box(
-                            modifier = Modifier
-                                .size(120.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.4f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(32.dp))
-                        }
-                    }
-
-                    // Camera button to change photo
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF333333))
-                            .clickable(enabled = !isUploadingPhoto) {
-                                imagePicker.launch("image/*")
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PhotoCamera,
-                            contentDescription = "Change Photo",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(
-                    text = if (isUploadingPhoto) "Saving photo to cloud..." else "Change profile photo",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable(enabled = !isUploadingPhoto) {
-                        imagePicker.launch("image/*")
-                    }
-                )
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // ---------------- USERNAME ----------------
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = "Username",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "@$username",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(15.dp))
-
-                // ---------------- PERSONAL INFORMATION ----------------
-                ProfileInfoCard(
-                    title = "Personal Information"
-                ) {
-                    ProfileField(
-                        label = "Name",
-                        value = name
-                    )
-                    if (emailText.isNotBlank()) {
-                        ProfileField(
-                            label = "Email",
-                            value = emailText
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(15.dp))
-
-                // ---------------- BIO CARD WITH EDIT BUTTON ----------------
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "Bio",
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            IconButton(
-                                onClick = {
-                                    editedBioText = profile?.bio.orEmpty()
-                                    showEditBioDialog = true
-                                },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = "Edit Bio",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = bio,
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            lineHeight = 21.sp
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(15.dp))
-
-                // ---------------- SAVED POSTS SHORTCUT ----------------
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSavedPostsClick() },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Bookmark,
-                                contentDescription = "Saved Posts",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "Saved Posts",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        Text(
-                            text = "$savedCount saved",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // ---------------- LOG OUT BUTTON ----------------
-                Button(
-                    onClick = {
-                        scope.launch {
-                            authRepository.signOut()
-                            onLogOutClick()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Log Out", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                }
-
-                Spacer(modifier = Modifier.height(25.dp))
-
-                // ---------------- POSTS HEADER ----------------
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Posts Created",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "(${userPosts.size})",
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-                
-                if (isLoadingPosts) {
-                    CircularProgressIndicator(modifier = Modifier.padding(20.dp))
-                } else if (userPosts.isEmpty()) {
-                    Text(
-                        text = "You haven't posted anything yet.",
-                        modifier = Modifier.padding(20.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // ---------------- USER POST CARDS ----------------
-            items(userPosts, key = { it.id }) { post ->
-                QuestionCard(
-                    question = post,
-                    onClick = onQuestionClick,
-                    onUpvoteClick = onUpvoteClick,
-                    onDownvoteClick = onDownvoteClick,
-                    onBookmarkClick = onBookmarkClick,
-                    onReportClick = onReportClick,
-                    isBookmarked = savedPostIds.contains(post.id)
-                )
-                Spacer(modifier = Modifier.height(14.dp))
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(25.dp))
-            }
-        }
-    }
+    ProfileContent(
+        profile = profile, email = emailText, name = name, username = username, bio = bio,
+        profileBitmap = profileBitmap, uploading = isUploadingPhoto, error = profileError,
+        savedCount = savedCount, savedPostIds = savedPostIds, userPosts = userPosts, isLoadingPosts = isLoadingPosts,
+        savedQuestions = savedQuestions, userAnswers = userAnswers, isLoadingAnswers = isLoadingAnswers,
+        onPhotoClick = { imagePicker.launch("image/*") },
+        onBioClick = { editedBioText = profile?.bio.orEmpty(); showEditBioDialog = true },
+        onSavedPostsClick = onSavedPostsClick, onQuestionClick = onQuestionClick,
+        onUpvoteClick = onUpvoteClick, onDownvoteClick = onDownvoteClick,
+        onBookmarkClick = onBookmarkClick, onReportClick = onReportClick,
+        onLogOutClick = { scope.launch {
+            authRepository.signOut().onSuccess { onLogOutClick() }
+                .onFailure { profileError = "Could not log out. Please try again." }
+        } }, onNavDestinationSelected = onNavDestinationSelected
+    )
 
     // ---------------- EDIT BIO DIALOG ----------------
     if (showEditBioDialog) {
@@ -481,6 +209,8 @@ fun ProfileScreen(
                             if (result.isSuccess) {
                                 profile = updated
                                 showEditBioDialog = false
+                            } else {
+                                profileError = "Could not save your bio. Please try again."
                             }
                         }
                     },
@@ -503,6 +233,95 @@ fun ProfileScreen(
             },
             shape = RoundedCornerShape(16.dp)
         )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun ProfileContent(
+    profile: ProfileDto?, email: String, name: String, username: String, bio: String,
+    profileBitmap: Bitmap?, uploading: Boolean, error: String?, savedCount: Int,
+    savedPostIds: Set<String>, userPosts: List<QuestionUiModel>, isLoadingPosts: Boolean,
+    onPhotoClick: () -> Unit, onBioClick: () -> Unit, onSavedPostsClick: () -> Unit,
+    onQuestionClick: (String) -> Unit, onUpvoteClick: (String) -> Unit, onDownvoteClick: (String) -> Unit,
+    onBookmarkClick: (String) -> Unit, onReportClick: (String, String) -> Unit,
+    onLogOutClick: () -> Unit, onNavDestinationSelected: (BottomNavDestination) -> Unit,
+    savedQuestions: List<QuestionUiModel> = emptyList(), userAnswers: List<ProfileAnswerUiModel> = emptyList(),
+    isLoadingAnswers: Boolean = false
+) {
+    var selectedTab by rememberSaveable { mutableStateOf("Saved Questions") }
+    var topic by rememberSaveable(selectedTab) { mutableStateOf("All") }
+    val posts = if (selectedTab == "Saved Questions") savedQuestions else userPosts
+    val activeTopics = if (selectedTab == "Answers") userAnswers.flatMap { it.question.tags } else posts.flatMap { it.tags }
+    val categories = activeTopics.distinct()
+    val visiblePosts = if (topic == "All") posts else posts.filter { topic in it.tags }
+    val visibleAnswers = if (topic == "All") userAnswers else userAnswers.filter { topic in it.question.tags }
+    val listState = rememberLazyListState()
+    Scaffold(topBar = { AppHeader() }, bottomBar = { BottomNavBar(BottomNavDestination.PROFILE.route, onNavDestinationSelected) }) { padding ->
+        LazyColumn(Modifier.padding(padding).consumeWindowInsets(padding).readingWidth(), state = listState,
+            contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(58.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer)
+                        .clickable(enabled = !uploading, onClick = onPhotoClick), Alignment.Center) {
+                        if (profileBitmap != null) Image(profileBitmap.asImageBitmap(), "Change profile photo",
+                            Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        else Text(name.firstOrNull()?.uppercase() ?: "S", style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.primary)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text("@" + username, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        Text(bio, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    OutlinedButton(onClick = onBioClick, contentPadding = PaddingValues(horizontal = 10.dp)) {
+                        Icon(Icons.Default.Edit, null, Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("Edit", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+            item { FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TextButton(onClick = onPhotoClick, enabled = !uploading) { Text(if (uploading) "Saving photo…" else "Change photo", style = MaterialTheme.typography.labelSmall) }
+                if (email.isNotBlank()) Text(email, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } }
+            if (error != null) item { ErrorBanner(error) }
+            item {
+                SecondaryTabRow(selectedTabIndex = listOf("Saved Questions", "My Questions", "Answers").indexOf(selectedTab),
+                    containerColor = MaterialTheme.colorScheme.background) {
+                    listOf("Saved Questions" to savedCount, "My Questions" to userPosts.size, "Answers" to userAnswers.size).forEach { (label, count) ->
+                        Tab(selected = selectedTab == label, onClick = {
+                            selectedTab = label
+                            if (label == "Saved Questions") onSavedPostsClick()
+                        }, text = { Text(label + " " + count, style = MaterialTheme.typography.labelSmall) })
+                    }
+                }
+            }
+            item { Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = topic == "All", onClick = { topic = "All" }, label = {
+                    Text("All (" + (if (selectedTab == "Answers") userAnswers.size else posts.size) + ")", style = MaterialTheme.typography.labelSmall)
+                })
+                categories.forEach { category -> FilterChip(selected = topic == category, onClick = { topic = category },
+                    label = { Text(category, style = MaterialTheme.typography.labelSmall) }) }
+            } }
+            if ((selectedTab == "My Questions" && isLoadingPosts) || (selectedTab == "Answers" && isLoadingAnswers))
+                item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+            if (selectedTab == "Answers") {
+                if (!isLoadingAnswers && visibleAnswers.isEmpty()) item { ScreenMessage("No answers yet", "Answers you share will appear here.") }
+                items(visibleAnswers, key = { it.answer.id }) { entry -> SectionCard {
+                    Text(entry.question.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    TimestampFormatter.format(entry.answer.createdAt)?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    Text(entry.answer.body, style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { onQuestionClick(entry.question.id) }) { Text("View conversation →") }
+                } }
+            } else {
+                if (visiblePosts.isEmpty() && !isLoadingPosts) item { ScreenMessage(
+                    if (selectedTab == "Saved Questions") "No saved questions yet" else "No questions yet",
+                    if (selectedTab == "Saved Questions") "Bookmark a question and it will appear in this tab." else "Questions you post will appear here.") }
+                items(visiblePosts, key = { it.id }) { post -> QuestionCard(post, onQuestionClick, onUpvoteClick,
+                    onDownvoteClick = onDownvoteClick, onBookmarkClick = onBookmarkClick, onReportClick = onReportClick,
+                    isBookmarked = post.id in savedPostIds) }
+            }
+            item { OutlinedButton(onClick = onLogOutClick, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Log out") } }
+        }
     }
 }
 
@@ -539,11 +358,14 @@ private fun base64ToBitmap(base64Str: String): Bitmap? {
     }
 }
 
-@Preview(showBackground = true)
+@Preview(name = "Profile · compact", widthDp = 320, heightDp = 700, showBackground = true)
+@Preview(name = "Profile · large text", widthDp = 430, heightDp = 932, fontScale = 1.5f, showBackground = true)
 @Composable
 fun ProfileScreenPreview() {
     CampusQnATheme {
-        ProfileScreen()
+        ProfileContent(null, "student@university.edu", "Campus student", "student", "Learning something new every day.",
+            null, false, null, 2, emptySet(), sampleQuestions, false,
+            {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, {}, {}, savedQuestions = sampleQuestions)
     }
 }
 
@@ -552,11 +374,11 @@ fun ProfileInfoCard(
     title: String,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Card(
+    OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier

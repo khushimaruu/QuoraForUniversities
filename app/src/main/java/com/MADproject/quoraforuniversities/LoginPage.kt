@@ -1,259 +1,47 @@
 package com.MADproject.quoraforuniversities
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.MADproject.quoraforuniversities.components.ErrorBanner
-import com.MADproject.quoraforuniversities.components.formatAuthErrorMessage
+import com.MADproject.quoraforuniversities.components.*
 import com.MADproject.quoraforuniversities.data.AuthRepository
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LoginPage(
-    authRepository: AuthRepository = remember { AuthRepository() },
-    onBackClick: () -> Unit = {},
-    onLoginSuccess: () -> Unit = {},
-    onNavigateToSignUp: () -> Unit = {}
-) {
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
-
+fun LoginPage(authRepository: AuthRepository? = null, onBackClick: () -> Unit = {},
+              onLoginSuccess: () -> Unit = {}, onNavigateToSignUp: () -> Unit = {}) {
+    var email by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val focusManager = LocalFocusManager.current
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {},
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        }
-    ) { paddingValues ->
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
-            color = MaterialTheme.colorScheme.background
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .navigationBarsPadding()
-                    .imePadding()
-                    .padding(horizontal = 28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    text = "Welcome Back!",
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Log in with your university account to continue",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(36.dp))
-
-                // Email Field
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = {
-                        email = it
-                        errorMessage = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("University Email") },
-                    placeholder = { Text("student@university.edu") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Email,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Email,
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Password Field
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = {
-                        password = it
-                        errorMessage = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Password") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    trailingIcon = {
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(
-                                imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                contentDescription = if (passwordVisible) "Hide password" else "Show password"
-                            )
-                        }
-                    },
-                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = { focusManager.clearFocus() }
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                errorMessage?.let { msg ->
-                    Spacer(modifier = Modifier.height(16.dp))
-                    ErrorBanner(message = msg)
-                }
-
-                Spacer(modifier = Modifier.height(28.dp))
-
-                // Login Button
-                Button(
-                    onClick = {
-                        val trimmedEmail = email.trim()
-                        val trimmedPassword = password.trim()
-                        if (trimmedEmail.isBlank() || trimmedPassword.isBlank()) {
-                            errorMessage = "Please enter both email and password."
-                        } else if (!trimmedEmail.contains("@") || !trimmedEmail.contains(".")) {
-                            errorMessage = "Please enter a valid university email address."
-                        } else {
-                            isLoading = true
-                            errorMessage = null
-                            scope.launch {
-                                val result = authRepository.signIn(trimmedEmail, trimmedPassword)
-                                isLoading = false
-                                if (result.isSuccess) {
-                                    onLoginSuccess()
-                                } else {
-                                    errorMessage = formatAuthErrorMessage(
-                                        result.exceptionOrNull(),
-                                        "Login failed. Please check your credentials and try again."
-                                    )
-                                }
-                            }
-                        }
-                    },
-                    enabled = !isLoading,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text(
-                            text = "Login",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Sign Up Redirection
-                Row(
-                    modifier = Modifier.padding(bottom = 24.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Don't have an account? ",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "Sign Up",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.clickable { onNavigateToSignUp() }
-                    )
-                }
+    fun submit() {
+        if (busy) return
+        val address = email.trim()
+        val secret = password.trim()
+        if (address.isBlank() || secret.isBlank()) error = "Please enter both email and password."
+        else if (!address.contains("@") || !address.contains(".")) error = "Please enter a valid university email address."
+        else {
+            busy = true; error = null
+            scope.launch {
+                try {
+                    (authRepository ?: AuthRepository()).signIn(address, secret).onSuccess { onLoginSuccess() }
+                        .onFailure { error = formatAuthErrorMessage(it, "Login failed. Please check your credentials and try again.") }
+                } finally { busy = false }
             }
         }
     }
+    CampusAuthPage(false, listOf(
+        CampusAuthField("email", "Campus email", "you@nmims.in", KeyboardType.Email),
+        CampusAuthField("password", "Password", "Your password", KeyboardType.Password, true)),
+        mapOf("email" to email, "password" to password),
+        { key, value -> if (key == "email") email = value else password = value; error = null },
+        busy, error, ::submit, onNavigateToSignUp, onBackClick)
 }
 
-@Preview(showBackground = true)
+@Preview(name = "Login · compact", widthDp = 320, heightDp = 640, showBackground = true)
+@Preview(name = "Login · large text", widthDp = 430, heightDp = 932, fontScale = 1.5f, showBackground = true)
 @Composable
-fun LoginPagePreview() {
-    CampusQnATheme {
-        LoginPage()
-    }
-}
+fun LoginPagePreview() { CampusQnATheme { LoginPage() } }

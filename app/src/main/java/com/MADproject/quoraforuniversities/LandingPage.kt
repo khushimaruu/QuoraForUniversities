@@ -1,191 +1,85 @@
 package com.MADproject.quoraforuniversities
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.School
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.MADproject.quoraforuniversities.components.*
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
-import com.MADproject.quoraforuniversities.ui.theme.HeaderGradientEnd
-import com.MADproject.quoraforuniversities.ui.theme.HeaderGradientMid
-import com.MADproject.quoraforuniversities.ui.theme.HeaderGradientStart
 
 @Composable
-fun LandingPage(
-    onLoginClick: () -> Unit = {},
-    onSignUpClick: () -> Unit = {}
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        HeaderGradientStart,
-                        HeaderGradientMid,
-                        HeaderGradientEnd,
-                        MaterialTheme.colorScheme.primary
-                    )
-                )
-            )
-            .windowInsetsPadding(WindowInsets.statusBars)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 28.dp, vertical = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            // Logo Badge matching Splash
-            Box(
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(62.dp)
-                        .clip(CircleShape)
-                        .background(Color.White),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Forum,
-                        contentDescription = "CampusCircle Logo",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(36.dp)
-                    )
+fun LandingPage(onLoginClick: () -> Unit = {}, onSignUpClick: () -> Unit = {}) {
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(Modifier.safeDrawingPadding().readingWidth(520.dp).verticalScroll(rememberScrollState())
+            .padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.primary) {
+                    Icon(Icons.Outlined.Forum, null, Modifier.padding(9.dp).size(20.dp), tint = MaterialTheme.colorScheme.onPrimary)
                 }
+                Text("CAMPUSCIRCLE", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Two-tone Brand Header
-            Text(
-                text = buildAnnotatedString {
-                    withStyle(SpanStyle(color = Color.White)) { append("Campus") }
-                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.secondary)) { append("Circle") }
-                },
-                fontSize = 38.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.SansSerif,
-                letterSpacing = 0.8.sp,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "Ask. Answer. Connect.",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White.copy(alpha = 0.9f),
-                letterSpacing = 0.4.sp
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Text(
-                text = "A community for university students to ask questions, share knowledge, and connect with campus life.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.8f),
-                textAlign = TextAlign.Center,
-                lineHeight = 22.sp,
-                modifier = Modifier.padding(horizontal = 8.dp)
-            )
-
-            Spacer(modifier = Modifier.height(28.dp))
-
-            // Feature Tag Pills
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                listOf("Campus Q&A", "Academics", "Events").forEach { tag ->
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = Color.White.copy(alpha = 0.18f),
-                    ) {
-                        Text(
-                            text = tag,
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                        )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Ask anything.", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                Text("Learn together.", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary)
+                Text("A space for university students to ask questions, share knowledge, and find their community.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            CampusIllustration(Modifier.fillMaxWidth().height(164.dp).clip(RoundedCornerShape(12.dp)))
+            SectionCard {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.Outlined.School, null, tint = MaterialTheme.colorScheme.primary)
+                    Text("Your university. Your community.", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                }
+                listOf("Find answers from fellow students", "Share your perspective and experience", "Ask anonymously when you need to").forEach { text ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
+                        Icon(Icons.Outlined.CheckCircle, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                        Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                     }
                 }
+                Button(onClick = onLoginClick, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                    Text("Log in to your campus"); Spacer(Modifier.width(10.dp)); Icon(Icons.AutoMirrored.Filled.ArrowForward, null)
+                }
+                OutlinedButton(onClick = onSignUpClick, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Create an account") }
             }
-
-            Spacer(modifier = Modifier.height(44.dp))
-
-            // High contrast Action Buttons
-            Button(
-                onClick = onLoginClick,
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = MaterialTheme.colorScheme.primary
-                ),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-            ) {
-                Text(
-                    text = "Login",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            OutlinedButton(
-                onClick = onSignUpClick,
-                shape = RoundedCornerShape(14.dp),
-                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = Color.White
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-            ) {
-                Text(
-                    text = "Sign Up",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+            Text("A little curiosity can start a great conversation.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
-@Preview(showBackground = true)
+/** Bundled campus imagery keeps onboarding independent of network availability. */
 @Composable
-fun LandingPagePreview() {
-    CampusQnATheme {
-        LandingPage()
+fun CampusIllustration(modifier: Modifier = Modifier) {
+    Box(modifier) {
+        Image(painterResource(R.drawable.campus_community), "Students studying together on a university campus",
+            Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))
+        Text("Your campus community", Modifier.align(Alignment.BottomStart).padding(12.dp),
+            style = MaterialTheme.typography.labelMedium, color = Color.White)
     }
 }
+
+@Preview(name = "Welcome · compact", widthDp = 320, heightDp = 640, showBackground = true)
+@Preview(name = "Welcome · large text", widthDp = 390, heightDp = 844, fontScale = 1.5f, showBackground = true)
+@Composable
+fun LandingPagePreview() { CampusQnATheme { LandingPage() } }

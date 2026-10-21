@@ -4,8 +4,34 @@ import com.MADproject.quoraforuniversities.components.QuestionUiModel
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.query.Order
+import com.MADproject.quoraforuniversities.ReplyUiModel
+
+data class ProfileAnswerUiModel(val question: QuestionUiModel, val answer: ReplyUiModel)
 
 class ProfileRepository {
+
+    suspend fun getUserAnswers(targetUserId: String? = null): Result<List<ProfileAnswerUiModel>> = runCatching {
+        val uid = targetUserId ?: SupabaseClient.client.auth.currentUserOrNull()?.id
+            ?: return@runCatching emptyList()
+        val answers = SupabaseClient.client.from("replies").select(Columns.raw("*, profiles(*)")) {
+            filter { eq("user_id", uid) }
+            order("created_at", Order.DESCENDING)
+        }.decodeList<ReplyWithProfileDto>()
+        if (answers.isEmpty()) return@runCatching emptyList()
+        val posts = PostRepository().getPosts().getOrThrow().associateBy { it.id }
+        val votes = SupabaseClient.client.from("votes").select {
+            filter { isIn("reply_id", answers.mapNotNull { it.id }) }
+        }.decodeList<VoteDto>().groupBy { it.replyId }
+        answers.mapNotNull { answer ->
+            val question = posts[answer.postId] ?: return@mapNotNull null
+            val answerVotes = votes[answer.id].orEmpty()
+            val up = answerVotes.count { it.voteType == 1 }
+            val down = answerVotes.count { it.voteType == -1 }
+            ProfileAnswerUiModel(question, answer.toUiModel(up - down, up, down,
+                answerVotes.firstOrNull { it.userId == uid }?.voteType ?: 0))
+        }
+    }
 
     suspend fun getProfile(targetUserId: String? = null): Result<ProfileDto?> {
         return runCatching {
@@ -79,8 +105,6 @@ class ProfileRepository {
                     currentUserVote = userVotesMap[postId] ?: 0
                 )
             }
-        }.recover {
-            emptyList()
         }
     }
 }
