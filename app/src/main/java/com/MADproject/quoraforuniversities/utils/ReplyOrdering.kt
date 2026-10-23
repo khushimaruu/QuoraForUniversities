@@ -6,6 +6,30 @@ import java.time.OffsetDateTime
 
 enum class ReplyOrder { TOP, NEWEST }
 
+data class ReplyThreadRow(val reply: ReplyUiModel, val depth: Int, val descendantCount: Int)
+
+/** Reuse the sorted, cycle-safe traversal, including roots whose parents were removed or hidden. */
+fun replyThreadRows(replies: List<ReplyUiModel>, order: ReplyOrder): List<ReplyThreadRow> {
+    val ordered = orderReplyThreads(replies, order).map { it.first }
+    val indices = mutableMapOf<String, Int>()
+    val parents = IntArray(ordered.size) { -1 }
+    val depths = IntArray(ordered.size)
+    val descendants = IntArray(ordered.size)
+    ordered.forEachIndexed { index, reply ->
+        val parent = indices[reply.parentReplyId]
+        if (parent != null) {
+            parents[index] = parent
+            depths[index] = depths[parent] + 1
+        }
+        indices[reply.id] = index
+    }
+    for (index in ordered.indices.reversed()) {
+        val parent = parents[index]
+        if (parent >= 0) descendants[parent] += descendants[index] + 1
+    }
+    return ordered.mapIndexed { index, reply -> ReplyThreadRow(reply, depths[index], descendants[index]) }
+}
+
 /** Sort within each thread, keeping a parent before its children. */
 fun orderReplyThreads(replies: List<ReplyUiModel>, order: ReplyOrder): List<Pair<ReplyUiModel, Boolean>> {
     fun time(reply: ReplyUiModel): Instant = runCatching {

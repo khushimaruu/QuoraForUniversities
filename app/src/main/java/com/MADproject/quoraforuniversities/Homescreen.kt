@@ -27,8 +27,10 @@ fun HomeScreen(
     onQuestionClick: (String) -> Unit = {}, onUpvoteClick: (String) -> Unit = {},
     onDownvoteClick: (String) -> Unit = {}, onBookmarkClick: ((String) -> Unit)? = null,
     onReportClick: ((postId: String, reason: String) -> Unit)? = null,
+    onAuthorClick: ((String) -> Unit)? = null,
     onNavDestinationSelected: (BottomNavDestination) -> Unit = {},
-    error: String? = null, onRetry: () -> Unit = {}
+    error: String? = null, onRetry: () -> Unit = {},
+    onDeletePost: ((String) -> Unit)? = null
 ) {
     val listState = rememberLazyListState()
     var filter by rememberSaveable { mutableStateOf("All") }
@@ -77,7 +79,8 @@ fun HomeScreen(
             items(visible, key = { it.id }) { question -> QuestionCard(
                 question = question, onClick = onQuestionClick, onUpvoteClick = onUpvoteClick,
                 onDownvoteClick = onDownvoteClick, onBookmarkClick = onBookmarkClick,
-                onReportClick = onReportClick, isBookmarked = question.id in savedPostIds) }
+                onReportClick = onReportClick, onAuthorClick = onAuthorClick, onDeleteClick = onDeletePost,
+                isBookmarked = question.id in savedPostIds) }
         }
     }
 }

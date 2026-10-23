@@ -156,7 +156,8 @@ fun PostDto.toUiModel(
     answerCount: Int = 0,
     upvoteCount: Int = 0,
     downvoteCount: Int = 0,
-    currentUserVote: Int = 0
+    currentUserVote: Int = 0,
+    currentUserId: String? = null
 ): QuestionUiModel {
     val tagsList = if (theme.isNotBlank()) {
         theme.split(",").map { it.trim() }.filter { it.isNotEmpty() }
@@ -164,7 +165,8 @@ fun PostDto.toUiModel(
 
     return QuestionUiModel(
         id = id ?: "",
-        authorId = userId ?: "",
+        authorId = if (isAnonymous) "" else userId.orEmpty(),
+        isOwnContent = currentUserId != null && currentUserId == userId,
         title = title,
         body = content,
         authorName = if (isAnonymous) "Anonymous" else authorName,
@@ -184,7 +186,8 @@ fun PostWithProfileDto.toUiModel(
     answerCount: Int = 0,
     upvoteCount: Int = 0,
     downvoteCount: Int = 0,
-    currentUserVote: Int = 0
+    currentUserVote: Int = 0,
+    currentUserId: String? = null
 ): QuestionUiModel {
     val tagsList = if (theme.isNotBlank()) {
         theme.split(",").map { it.trim() }.filter { it.isNotEmpty() }
@@ -198,7 +201,8 @@ fun PostWithProfileDto.toUiModel(
 
     return QuestionUiModel(
         id = id ?: "",
-        authorId = userId ?: "",
+        authorId = if (isAnonymous) "" else userId.orEmpty(),
+        isOwnContent = currentUserId != null && currentUserId == userId,
         title = title,
         body = content,
         authorName = resolvedAuthorName,
@@ -217,10 +221,13 @@ fun PostWithProfileDto.toUiModel(
 fun ReplyDto.toUiModel(
     authorName: String = "Anonymous",
     voteCount: Int = 0,
-    authorUsername: String? = null
+    authorUsername: String? = null,
+    currentUserId: String? = null
 ): ReplyUiModel {
     return ReplyUiModel(
         id = id ?: "",
+        authorId = userId.orEmpty(),
+        isOwnContent = currentUserId != null && currentUserId == userId,
         authorName = authorName,
         body = content,
         voteCount = voteCount,
@@ -234,11 +241,14 @@ fun ReplyWithProfileDto.toUiModel(
     voteCount: Int = 0,
     upvoteCount: Int = 0,
     downvoteCount: Int = 0,
-    currentUserVote: Int = 0
+    currentUserVote: Int = 0,
+    currentUserId: String? = null
 ): ReplyUiModel {
     val resolvedAuthorName = profiles?.name ?: profiles?.username ?: "Student"
     return ReplyUiModel(
         id = id ?: "",
+        authorId = userId.orEmpty(),
+        isOwnContent = currentUserId != null && currentUserId == userId,
         authorName = resolvedAuthorName,
         body = content,
         voteCount = voteCount,

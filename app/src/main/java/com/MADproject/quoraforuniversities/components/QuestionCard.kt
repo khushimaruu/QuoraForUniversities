@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OutlinedFlag
 import androidx.compose.material.icons.filled.ThumbDown
@@ -44,7 +45,8 @@ data class QuestionUiModel(
     val downvoteCount: Int = 0,
     val currentUserVote: Int = 0, // 1 for upvote, -1 for downvote, 0 for none
     val createdAt: String? = null,
-    val authorAvatar: String? = null
+    val authorAvatar: String? = null,
+    val isOwnContent: Boolean = false
 )
 
 val CommunityReportReasons = listOf(
@@ -64,10 +66,10 @@ fun QuestionCard(
     question: QuestionUiModel, onClick: (String) -> Unit, onUpvoteClick: (String) -> Unit,
     modifier: Modifier = Modifier, onDownvoteClick: ((String) -> Unit)? = null,
     onBookmarkClick: ((String) -> Unit)? = null, onReportClick: ((String, String) -> Unit)? = null,
-    isBookmarked: Boolean = false
+    isBookmarked: Boolean = false,
+    onAuthorClick: ((String) -> Unit)? = null,
+    onDeleteClick: ((String) -> Unit)? = null
 ) {
-    var menu by remember { mutableStateOf(false) }
-    var report by remember { mutableStateOf(false) }
     OutlinedCard(onClick = { onClick(question.id) }, modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -75,11 +77,13 @@ fun QuestionCard(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AuthorAvatar(if (question.isAnonymous) null else question.authorAvatar,
                     if (question.isAnonymous) "Anonymous" else question.authorName, 28.dp)
-                AuthorByline(if (question.isAnonymous) "Anonymous" else question.authorName, question.createdAt, Modifier.weight(1f))
-                if (onReportClick != null) Box {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Question options") }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(text = { Text("Report question") }, onClick = { menu = false; report = true })
+                AuthorByline(if (question.isAnonymous) "Anonymous" else question.authorName, question.createdAt, Modifier.weight(1f),
+                    onAuthorClick = if (!question.isAnonymous && question.authorId.isNotBlank() && onAuthorClick != null)
+                        ({ onAuthorClick(question.authorId) }) else null)
+                if (onReportClick != null || onDeleteClick != null) {
+                    ReportContentMenu(question.id, "post", question.isOwnContent,
+                        onDeleteClick = onDeleteClick?.let { { it(question.id) } }) { reason ->
+                        onReportClick?.invoke(question.id, reason)
                     }
                 }
             }
@@ -121,27 +125,95 @@ fun QuestionCard(
             }
         }
     }
-    if (report) ReportPostDialog(onDismiss = { report = false }, onConfirmReport = {
-        report = false; onReportClick?.invoke(question.id, it)
-    })
 }
 
-/**
- * Reusable clean community guidelines report dialog
- */
+/** The existing report menu and dialog, shared by every content presentation. */
+@Composable
+fun ReportContentMenu(
+    contentId: String,
+    contentType: String,
+    isOwnContent: Boolean = false,
+    onDeleteClick: (() -> Unit)? = null,
+    onConfirmReport: (String) -> Unit
+) {
+    if (isOwnContent && onDeleteClick == null) return
+    var expanded by remember(contentId) { mutableStateOf(false) }
+    var showDialog by remember(contentId) { mutableStateOf(false) }
+    val label = if (isOwnContent) "Delete" else "Report"
+    Box {
+        IconButton(onClick = { expanded = true }, modifier = Modifier.size(48.dp)) {
+            Icon(Icons.Default.MoreVert, contentDescription = "$contentType options",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text(label, color = MaterialTheme.colorScheme.error) },
+                leadingIcon = { Icon(if (isOwnContent) Icons.Outlined.Delete else Icons.Default.OutlinedFlag,
+                    null, tint = MaterialTheme.colorScheme.error) },
+                onClick = {
+                    expanded = false
+                    if (isOwnContent) onDeleteClick?.invoke() else showDialog = true
+                }
+            )
+        }
+    }
+    if (showDialog) ReportPostDialog(
+        onDismiss = { showDialog = false },
+        onConfirmReport = { reason -> showDialog = false; onConfirmReport(reason) },
+        contentType = contentType
+    )
+}
+
+/** Shared confirmation for owner-initiated content deletion. */
+@Composable
+fun DeleteContentDialog(
+    isPost: Boolean,
+    deleting: Boolean,
+    error: String?,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { if (!deleting) onDismiss() },
+        title = { Text(if (isPost) "Delete post?" else "Delete comment or reply?", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(if (isPost) "This post, its comments, and all nested replies will be permanently deleted. This cannot be undone."
+                    else "This comment or reply and all replies beneath it will be permanently deleted. This cannot be undone.")
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm, enabled = !deleting,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+                if (deleting) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onError)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(if (deleting) "Deleting…" else "Delete")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !deleting) { Text("Cancel") } },
+        shape = RoundedCornerShape(16.dp)
+    )
+}
+
+/** Reusable community guidelines report dialog. */
 @Composable
 fun ReportPostDialog(
     onDismiss: () -> Unit,
-    onConfirmReport: (reason: String) -> Unit
+    onConfirmReport: (reason: String) -> Unit,
+    contentType: String = "post"
 ) {
     var selectedReason by remember { mutableStateOf(CommunityReportReasons.first()) }
     var customDetails by remember { mutableStateOf("") }
 
     AlertDialog(
+        modifier = Modifier.imePadding(),
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Report Content",
+                text = "Report",
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp
             )
@@ -154,7 +226,7 @@ fun ReportPostDialog(
                     .padding(vertical = 4.dp)
             ) {
                 Text(
-                    text = "Help us understand what's wrong with this post. Posts reported by multiple students are automatically hidden.",
+                    text = "Help us understand what's wrong with this $contentType. ${when (contentType) { "post" -> "Posts"; "comment" -> "Comments"; else -> "Replies" }} reported by multiple students are automatically hidden.",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 18.sp

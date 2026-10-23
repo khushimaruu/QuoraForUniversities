@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
+import com.MADproject.quoraforuniversities.components.DeleteContentDialog
 import com.MADproject.quoraforuniversities.components.OfflineSystemBanner
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
 import com.MADproject.quoraforuniversities.components.SplashScreen
@@ -59,6 +60,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+private data class ProfileNavigationEntry(
+    val screen: String,
+    val question: QuestionUiModel?,
+    val postReturnScreen: String
+)
+
+private data class DeletionTarget(val id: String, val postId: String, val isPost: Boolean)
 
 @Composable
 fun CampusQnAApp(
@@ -92,24 +101,64 @@ fun CampusQnAApp(
     var savedPostIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var savedQuestions by remember { mutableStateOf<List<QuestionUiModel>>(emptyList()) }
     var isSavedLoading by remember { mutableStateOf(false) }
+    var savedRequestVersion by remember { mutableLongStateOf(0L) }
+    var pendingBookmarks by remember { mutableStateOf(emptySet<String>()) }
 
     var userCreatedPosts by remember { mutableStateOf<List<QuestionUiModel>>(emptyList()) }
     var isUserPostsLoading by remember { mutableStateOf(false) }
     var userAnswers by remember { mutableStateOf<List<ProfileAnswerUiModel>>(emptyList()) }
     var isUserAnswersLoading by remember { mutableStateOf(false) }
     var postingName by remember { mutableStateOf("Your profile") }
+    val profileHistory = remember { mutableStateListOf<ProfileNavigationEntry>() }
+    var pendingReports by remember { mutableStateOf(emptySet<String>()) }
+    var pendingDeletion by remember { mutableStateOf<DeletionTarget?>(null) }
+    var isDeleting by remember { mutableStateOf(false) }
+    var deletionError by remember { mutableStateOf<String?>(null) }
+    // Prevent a refresh started before deletion from restoring removed content.
+    var deletedPostIds by remember { mutableStateOf(emptySet<String>()) }
+    var deletedReplyIds by remember { mutableStateOf(emptySet<String>()) }
+
+    fun requestDeletePost(id: String) {
+        deletionError = null
+        pendingDeletion = DeletionTarget(id, id, true)
+    }
+
+    fun requestDeleteReply(id: String, postId: String) {
+        deletionError = null
+        pendingDeletion = DeletionTarget(id, postId, false)
+    }
+
+    fun openAuthorProfile(userId: String) {
+        if (userId.isBlank() || currentScreen == "user_profile/$userId") return
+        profileHistory.add(ProfileNavigationEntry(currentScreen, selectedQuestion, postReturnScreen))
+        currentScreen = "user_profile/$userId"
+    }
+
+    fun returnFromAuthorProfile() {
+        val previous = profileHistory.removeLastOrNull()
+        if (previous == null) currentScreen = "home"
+        else {
+            selectedQuestion = previous.question
+            postReturnScreen = previous.postReturnScreen
+            currentScreen = previous.screen
+        }
+    }
 
     fun refreshSavedPosts() {
+        val requestVersion = ++savedRequestVersion
         scope.launch {
             if (savedQuestions.isEmpty()) {
                 isSavedLoading = true
             }
-            val ids = postRepository.getSavedPostIds()
-            savedPostIds = ids
             val res = postRepository.getSavedPosts()
+            if (requestVersion != savedRequestVersion) return@launch
             isSavedLoading = false
             if (res.isSuccess) {
-                savedQuestions = res.getOrDefault(emptyList())
+                val posts = res.getOrThrow().filterNot { it.id in deletedPostIds }
+                savedQuestions = posts
+                savedPostIds = posts.map { it.id }.toSet()
+            } else {
+                snackbarHostState.showSnackbar("Couldn't load saved questions. Please try again.")
             }
         }
     }
@@ -122,26 +171,33 @@ fun CampusQnAApp(
             val res = profileRepository.getUserPosts(uid)
             isUserPostsLoading = false
             if (res.isSuccess) {
-                userCreatedPosts = res.getOrDefault(emptyList())
+                userCreatedPosts = res.getOrDefault(emptyList()).filterNot { it.id in deletedPostIds }
             } else {
                 snackbarHostState.showSnackbar("Couldn't load your questions. Please try opening your profile again.")
             }
             isUserAnswersLoading = true
-            profileRepository.getUserAnswers(uid).onSuccess { userAnswers = it }
+            profileRepository.getUserAnswers(uid).onSuccess { answers ->
+                userAnswers = answers.filterNot { it.question.id in deletedPostIds || it.answer.id in deletedReplyIds }
+            }
                 .onFailure { snackbarHostState.showSnackbar("Couldn't load your answers. Please try again.") }
             isUserAnswersLoading = false
         }
     }
 
     fun toggleBookmark(postId: String) {
+        if (postId in pendingBookmarks) return
+        val wasSaved = postId in savedPostIds
+        pendingBookmarks = pendingBookmarks + postId
+        ++savedRequestVersion
         scope.launch {
-            val result = if (savedPostIds.contains(postId)) {
+            val result = if (wasSaved) {
                 postRepository.unbookmarkPost(postId)
             } else {
                 postRepository.bookmarkPost(postId)
             }
-            if (result.isSuccess) refreshSavedPosts()
-            else snackbarHostState.showSnackbar("Couldn't update your saved questions. Please try again.")
+            pendingBookmarks = pendingBookmarks - postId
+            refreshSavedPosts()
+            if (result.isFailure) snackbarHostState.showSnackbar("Couldn't update your saved questions. Please try again.")
         }
     }
 
@@ -153,7 +209,7 @@ fun CampusQnAApp(
             val result = postRepository.getPosts()
             isFeedLoading = false
             if (result.isSuccess) {
-                val updatedList = result.getOrDefault(emptyList())
+                val updatedList = result.getOrDefault(emptyList()).filterNot { it.id in deletedPostIds }
                 questions = updatedList
                 feedError = null
                 // Refresh cached search data after real feed changes, never just on returning.
@@ -179,10 +235,59 @@ fun CampusQnAApp(
         scope.launch {
             val result = postRepository.getReplies(postId)
             if (result.isSuccess && selectedQuestion?.id == postId && requestVersion == repliesRequestVersion) {
-                replies = result.getOrDefault(emptyList())
+                replies = result.getOrDefault(emptyList()).filterNot { it.id in deletedReplyIds }
             } else if (result.isFailure && selectedQuestion?.id == postId && requestVersion == repliesRequestVersion) {
                 snackbarHostState.showSnackbar("Couldn't load answers. Please reopen this question to try again.")
             }
+        }
+    }
+
+    fun confirmDelete() {
+        val target = pendingDeletion ?: return
+        if (isDeleting) return
+        isDeleting = true
+        deletionError = null
+        scope.launch {
+            val result = if (target.isPost) postRepository.deletePost(target.id) else postRepository.deleteReply(target.id)
+            isDeleting = false
+            if (result.isFailure) {
+                deletionError = "Couldn't delete this content. It may no longer be available, or your account may not have permission. Please try again."
+                return@launch
+            }
+            if (target.isPost) {
+                deletedPostIds = deletedPostIds + target.id
+                questions = questions.filterNot { it.id == target.id }
+                searchResults = searchResults.filterNot { it.id == target.id }
+                savedQuestions = savedQuestions.filterNot { it.id == target.id }
+                savedPostIds = savedPostIds - target.id
+                userCreatedPosts = userCreatedPosts.filterNot { it.id == target.id }
+                userAnswers = userAnswers.filterNot { it.question.id == target.id }
+                profileHistory.removeAll { it.question?.id == target.id }
+                if (selectedQuestion?.id == target.id) {
+                    selectedQuestion = null
+                    replies = emptyList()
+                    repliesForPostId = null
+                    ++repliesRequestVersion
+                    if (currentScreen == "post") currentScreen = postReturnScreen
+                }
+            } else {
+                val removedIds = mutableSetOf(target.id)
+                val knownReplies = replies + userAnswers.map { it.answer }
+                do {
+                    val added = knownReplies.filter { it.parentReplyId in removedIds }.map { it.id }
+                    val changed = removedIds.addAll(added)
+                } while (changed)
+                deletedReplyIds = deletedReplyIds + removedIds
+                replies = replies.filterNot { it.id in removedIds }
+                userAnswers = userAnswers.filterNot { it.answer.id in removedIds }
+                if (selectedQuestion?.id == target.postId) refreshReplies(target.postId)
+            }
+            pendingDeletion = null
+            searchRefreshVersion++
+            refreshQuestions()
+            refreshSavedPosts()
+            refreshUserPosts()
+            snackbarHostState.showSnackbar(if (target.isPost) "Post deleted." else "Comment or reply deleted.")
         }
     }
 
@@ -272,14 +377,16 @@ fun CampusQnAApp(
         }
     }
 
-    // COMMUNITY REPORTING: Soft-hides post immediately for reporter and records in DB
+    // COMMUNITY REPORTING: Record the report before hiding content for the reporter.
     fun handleReportPost(postId: String, reason: String) {
         val currentUserId = authRepository.getCurrentUserId()
         val targetPost = questions.find { it.id == postId }
             ?: savedQuestions.find { it.id == postId }
             ?: userCreatedPosts.find { it.id == postId }
+            ?: searchResults.find { it.id == postId }
+            ?: selectedQuestion?.takeIf { it.id == postId }
 
-        if (targetPost != null && targetPost.authorId == currentUserId && currentUserId != null) {
+        if (targetPost != null && (targetPost.isOwnContent || targetPost.authorId == currentUserId)) {
             scope.launch {
                 snackbarHostState.showSnackbar(
                     message = "You cannot report your own post.",
@@ -289,19 +396,22 @@ fun CampusQnAApp(
             return
         }
 
-        // Instantly soft-hide post on client side for the reporting student
-        questions = questions.filter { it.id != postId }
-        searchResults = searchResults.filter { it.id != postId }
-        savedQuestions = savedQuestions.filter { it.id != postId }
-        userCreatedPosts = userCreatedPosts.filter { it.id != postId }
-        if (selectedQuestion?.id == postId) {
-            selectedQuestion = null
-            currentScreen = "home"
-        }
-
+        if (postId in pendingReports) return
+        pendingReports = pendingReports + postId
         scope.launch {
             val result = postRepository.reportPost(postId, reason)
+            pendingReports = pendingReports - postId
             if (result.isSuccess) {
+                questions = questions.filter { it.id != postId }
+                searchResults = searchResults.filter { it.id != postId }
+                savedQuestions = savedQuestions.filter { it.id != postId }
+                userCreatedPosts = userCreatedPosts.filter { it.id != postId }
+                userAnswers = userAnswers.filter { it.question.id != postId }
+                searchRefreshVersion++
+                if (selectedQuestion?.id == postId) {
+                    selectedQuestion = null
+                    currentScreen = "home"
+                }
                 snackbarHostState.showSnackbar(
                     message = "Post reported. Thank you for keeping CampusCircle safe.",
                     duration = SnackbarDuration.Short
@@ -309,14 +419,45 @@ fun CampusQnAApp(
             } else {
                 val err = result.exceptionOrNull()?.message ?: "Failed to submit report"
                 snackbarHostState.showSnackbar(
-                    message = if (err.contains("already reported", ignoreCase = true)) {
+                    message = if (err.contains("already reported", ignoreCase = true) || err.contains("23505")) {
                         "You have already reported this post."
+                    } else if (err.contains("You cannot report your own post.")) {
+                        "You cannot report your own post."
                     } else {
-                        "Notice: $err"
+                        "Couldn't submit your report. Please try again."
                     },
                     duration = SnackbarDuration.Short
                 )
             }
+        }
+    }
+
+    fun handleReportReply(replyId: String, reason: String) {
+        if (replyId in pendingReports) return
+        pendingReports = pendingReports + replyId
+        scope.launch {
+            val result = postRepository.reportReply(replyId, reason)
+            pendingReports = pendingReports - replyId
+            val message = if (result.isSuccess) {
+                replies = replies.filter { it.id != replyId }
+                userAnswers = userAnswers.filter { it.answer.id != replyId }
+                searchRefreshVersion++
+                "Reply reported. Thank you for keeping CampusCircle safe."
+            } else {
+                val error = result.exceptionOrNull()?.message.orEmpty()
+                when {
+                    error.contains("already reported", true) || error.contains("23505") -> "You have already reported this reply."
+                    error.contains("You cannot report your own reply.") -> "You cannot report your own reply."
+                    else -> "Couldn't submit your report. Please try again."
+                }
+            }
+            snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
+        }
+    }
+
+    LaunchedEffect(currentScreen, selectedQuestion?.id) {
+        if (currentScreen == "post") selectedQuestion?.let {
+            if (repliesForPostId != it.id) refreshReplies(it.id)
         }
     }
 
@@ -336,7 +477,7 @@ fun CampusQnAApp(
         // The repository returns Result, including cancellation; don't apply an obsolete query.
         coroutineContext.ensureActive()
         result.onSuccess {
-            searchResults = it
+            searchResults = it.filterNot { question -> question.id in deletedPostIds }
         }.onFailure {
             // Keep the last successful results visible if a background refresh fails.
             searchError = "Search failed. Please try again."
@@ -360,7 +501,8 @@ fun CampusQnAApp(
 
     if (currentScreen != "splash" && currentScreen != "home" && currentScreen != "landing") {
         BackHandler {
-            currentScreen = when {
+            if (currentScreen.startsWith("user_profile/")) returnFromAuthorProfile()
+            else currentScreen = when {
                 !authRepository.isLoggedIn() -> "landing"
                 currentScreen == "post" -> postReturnScreen
                 else -> "home"
@@ -432,6 +574,7 @@ fun CampusQnAApp(
 
                     "home" -> listScreenState.SaveableStateProvider("home") {
                         HomeScreen(
+                            onDeletePost = { requestDeletePost(it) },
                             questions = questions,
                             isLoading = isFeedLoading,
                             error = feedError,
@@ -447,6 +590,7 @@ fun CampusQnAApp(
                             onDownvoteClick = { questionId -> handleDownvote(questionId) },
                             onBookmarkClick = { questionId -> toggleBookmark(questionId) },
                             onReportClick = { postId, reason -> handleReportPost(postId, reason) },
+                            onAuthorClick = { openAuthorProfile(it) },
                             onNavDestinationSelected = { destination ->
                                 when (destination) {
                                     BottomNavDestination.HOME -> currentScreen = "home"
@@ -461,6 +605,7 @@ fun CampusQnAApp(
 
                     "search" -> listScreenState.SaveableStateProvider("search") {
                         SearchPage(
+                            onDeletePost = { requestDeletePost(it) },
                             questions = questions,
                             searchQuery = searchQuery,
                             onSearchQueryChange = { searchQuery = it },
@@ -478,6 +623,7 @@ fun CampusQnAApp(
                             onDownvoteClick = { questionId -> handleDownvote(questionId) },
                             onBookmarkClick = { questionId -> toggleBookmark(questionId) },
                             onReportClick = { postId, reason -> handleReportPost(postId, reason) },
+                            onAuthorClick = { openAuthorProfile(it) },
                             onNavDestinationSelected = { destination ->
                                 when (destination) {
                                     BottomNavDestination.HOME -> currentScreen = "home"
@@ -493,15 +639,19 @@ fun CampusQnAApp(
                     "post" -> {
                         selectedQuestion?.let { question ->
                             PostDetailPage(
+                                onDeletePost = { requestDeletePost(it) },
+                                onDeleteReply = { id, postId -> requestDeleteReply(id, postId) },
                                 question = question,
                                 replies = replies,
                                 replyAuthorName = postingName,
+                                onReportReply = { id, reason -> handleReportReply(id, reason) },
                                 isBookmarked = savedPostIds.contains(question.id),
                                 onBackClick = { currentScreen = postReturnScreen },
                                 onUpvoteClick = { handleUpvote(question.id) },
                                 onDownvoteClick = { handleDownvote(question.id) },
                                 onBookmarkClick = { questionId -> toggleBookmark(questionId) },
                                 onReportClick = { postId, reason -> handleReportPost(postId, reason) },
+                                onAuthorClick = { openAuthorProfile(it) },
                                 onSubmitReply = { text, parentReplyId, onResult ->
                                     scope.launch {
                                         val result = postRepository.createReply(question.id, text, parentReplyId)
@@ -522,7 +672,7 @@ fun CampusQnAApp(
                                             val requestVersion = ++repliesRequestVersion
                                             val refreshed = postRepository.getReplies(question.id)
                                             if (refreshed.isSuccess && selectedQuestion?.id == question.id && requestVersion == repliesRequestVersion) {
-                                                replies = refreshed.getOrThrow()
+                                                replies = refreshed.getOrThrow().filterNot { it.id in deletedReplyIds }
                                             }
                                             onResult(refreshed.exceptionOrNull()?.let {
                                                 "Vote saved, but replies could not refresh. Reopen this post."
@@ -547,12 +697,15 @@ fun CampusQnAApp(
 
                     "profile" -> listScreenState.SaveableStateProvider("profile") {
                         ProfileScreen(
+                            onDeletePost = { requestDeletePost(it) },
+                            onDeleteReply = { id, postId -> requestDeleteReply(id, postId) },
                             authRepository = authRepository,
                             profileRepository = profileRepository,
                             savedPostIds = savedPostIds,
                             userPosts = userCreatedPosts,
                             isLoadingPosts = isUserPostsLoading,
                             userAnswers = userAnswers,
+                            onReportReply = { id, reason -> handleReportReply(id, reason) },
                             isLoadingAnswers = isUserAnswersLoading,
                             onQuestionClick = { questionId ->
                                 postReturnScreen = "profile"
@@ -569,6 +722,7 @@ fun CampusQnAApp(
                             onDownvoteClick = { handleDownvote(it) },
                             onBookmarkClick = { toggleBookmark(it) },
                             onReportClick = { id, reason -> handleReportPost(id, reason) },
+                            onAuthorClick = { openAuthorProfile(it) },
                             onPhotoSaved = {
                                 refreshQuestions()
                                 refreshSavedPosts()
@@ -593,6 +747,7 @@ fun CampusQnAApp(
 
                     "saved_posts" -> {
                         SavedPostsPage(
+                            onDeletePost = { requestDeletePost(it) },
                             savedQuestions = savedQuestions,
                             savedPostIds = savedPostIds,
                             isLoading = isSavedLoading,
@@ -611,6 +766,7 @@ fun CampusQnAApp(
                             onDownvoteClick = { questionId -> handleDownvote(questionId) },
                             onBookmarkClick = { questionId -> toggleBookmark(questionId) },
                             onReportClick = { postId, reason -> handleReportPost(postId, reason) },
+                            onAuthorClick = { openAuthorProfile(it) },
                             onBackClick = { currentScreen = "profile" },
                             onNavDestinationSelected = { destination ->
                                 when (destination) {
@@ -636,6 +792,52 @@ fun CampusQnAApp(
                             }
                         )
                     }
+
+                    else -> if (targetScreen.startsWith("user_profile/")) {
+                        key(targetScreen) {
+                            ProfileScreen(
+                                onDeletePost = { requestDeletePost(it) },
+                                onDeleteReply = { id, postId -> requestDeleteReply(id, postId) },
+                                authRepository = authRepository,
+                                profileRepository = profileRepository,
+                                targetUserId = targetScreen.substringAfter("user_profile/"),
+                                onReportReply = { id, reason -> handleReportReply(id, reason) },
+                                contentRefreshVersion = searchRefreshVersion,
+                                savedPostIds = savedPostIds,
+                                onBackClick = { returnFromAuthorProfile() },
+                                onAuthorClick = { openAuthorProfile(it) },
+                                onQuestionClick = { questionId ->
+                                    scope.launch {
+                                        val result = profileRepository.getUserPosts(targetScreen.substringAfter("user_profile/"))
+                                        val question = result.getOrNull()?.find { it.id == questionId }
+                                            ?: postRepository.getPosts().getOrNull()?.find { it.id == questionId }
+                                        if (question != null && currentScreen == targetScreen) {
+                                            postReturnScreen = targetScreen
+                                            selectedQuestion = question
+                                            refreshReplies(questionId)
+                                            currentScreen = "post"
+                                        } else if (currentScreen == targetScreen) {
+                                            snackbarHostState.showSnackbar("Couldn't open this question. Please try again.")
+                                        }
+                                    }
+                                },
+                                onUpvoteClick = { handleUpvote(it) },
+                                onDownvoteClick = { handleDownvote(it) },
+                                onBookmarkClick = { toggleBookmark(it) },
+                                onReportClick = { id, reason -> handleReportPost(id, reason) },
+                                onNavDestinationSelected = { destination ->
+                                    currentScreen = when (destination) {
+                                        BottomNavDestination.HOME -> "home"
+                                        BottomNavDestination.SEARCH -> "search"
+                                        BottomNavDestination.PROFILE -> "profile"
+                                        BottomNavDestination.ADD_POST -> "add_post"
+                                        BottomNavDestination.SAVED -> { refreshSavedPosts(); "saved_posts" }
+                                    }
+                                    profileHistory.clear()
+                                }
+                            )
+                        }
+                    }
                 }
             }
 
@@ -644,5 +846,10 @@ fun CampusQnAApp(
                 modifier = Modifier.align(Alignment.TopCenter)
             )
         }
+    }
+    pendingDeletion?.let { target ->
+        DeleteContentDialog(target.isPost, isDeleting, deletionError,
+            onDismiss = { pendingDeletion = null; deletionError = null },
+            onConfirm = { confirmDelete() })
     }
 }

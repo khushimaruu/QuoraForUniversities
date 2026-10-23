@@ -51,6 +51,7 @@ import com.MADproject.quoraforuniversities.components.BottomNavBar
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import com.MADproject.quoraforuniversities.components.QuestionCard
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
+import com.MADproject.quoraforuniversities.components.ReportContentMenu
 import com.MADproject.quoraforuniversities.data.AuthRepository
 import com.MADproject.quoraforuniversities.data.ProfileDto
 import com.MADproject.quoraforuniversities.data.ProfileRepository
@@ -77,8 +78,19 @@ fun ProfileScreen(
     onReportClick: (String, String) -> Unit = { _, _ -> },
     onPhotoSaved: () -> Unit = {},
     onLogOutClick: () -> Unit = {},
-    onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
+    onNavDestinationSelected: (BottomNavDestination) -> Unit = {},
+    targetUserId: String? = null,
+    contentRefreshVersion: Long = 0L,
+    onBackClick: () -> Unit = {},
+    onAuthorClick: ((String) -> Unit)? = null,
+    onReportReply: (String, String) -> Unit = { _, _ -> },
+    onDeletePost: ((String) -> Unit)? = null,
+    onDeleteReply: ((String, String) -> Unit)? = null
 ) {
+    val isPublicProfile = targetUserId != null
+    var publicPosts by remember(targetUserId) { mutableStateOf<List<QuestionUiModel>>(emptyList()) }
+    var publicAnswers by remember(targetUserId) { mutableStateOf<List<ProfileAnswerUiModel>>(emptyList()) }
+    var loadingPublicContent by remember(targetUserId) { mutableStateOf(isPublicProfile) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -95,15 +107,15 @@ fun ProfileScreen(
     var isSavingBio by remember { mutableStateOf(false) }
     var profileError by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        val uid = authRepository.getCurrentUserId()
-        val email = authRepository.getCurrentUserEmail() ?: ""
+    LaunchedEffect(targetUserId) {
+        val uid = targetUserId ?: authRepository.getCurrentUserId()
+        val email = if (isPublicProfile) "" else authRepository.getCurrentUserEmail().orEmpty()
         emailText = email
         
         // Fetch Profile from Supabase
         val fetchedResult = profileRepository.getProfile(uid)
         val fetched = fetchedResult.getOrNull()
-        if (fetchedResult.isFailure) profileError = "Could not load your profile. Check your connection and reopen this page."
+        if (fetchedResult.isFailure || (isPublicProfile && fetched == null)) profileError = "Could not load this profile. Check your connection and reopen this page."
         if (fetched != null) {
             profile = fetched
             fetched.avatarUrl?.let { avatarStr ->
@@ -114,7 +126,7 @@ fun ProfileScreen(
                     }
                 }
             }
-        } else {
+        } else if (!isPublicProfile) {
             profile = ProfileDto(
                 id = uid ?: "",
                 username = email.substringBefore("@").ifBlank { "student" },
@@ -123,9 +135,19 @@ fun ProfileScreen(
         }
     }
 
+    LaunchedEffect(targetUserId, contentRefreshVersion) {
+        if (targetUserId != null) {
+            profileRepository.getUserPosts(targetUserId).onSuccess { publicPosts = it }
+                .onFailure { profileError = "Could not load this user's questions. Please reopen this profile." }
+            profileRepository.getUserAnswers(targetUserId).onSuccess { publicAnswers = it }
+                .onFailure { profileError = "Could not load this user's answers. Please reopen this profile." }
+            loadingPublicContent = false
+        }
+    }
+
     val username = profile?.username ?: emailText.substringBefore("@").ifBlank { "student" }
     val name = profile?.name ?: "Student"
-    val bio = profile?.bio?.takeIf { it.isNotBlank() } ?: "No bio added yet. Click edit to add one!"
+    val bio = profile?.bio?.takeIf { it.isNotBlank() } ?: if (isPublicProfile) "No bio added yet." else "No bio added yet. Click edit to add one!"
 
     // Profile photo picker
     val imagePicker = rememberLauncherForActivityResult(
@@ -164,12 +186,16 @@ fun ProfileScreen(
     ProfileContent(
         profile = profile, email = emailText, name = name, username = username, bio = bio,
         profileBitmap = profileBitmap, uploading = isUploadingPhoto, error = profileError,
-        savedPostIds = savedPostIds, userPosts = userPosts, isLoadingPosts = isLoadingPosts,
-        userAnswers = userAnswers, isLoadingAnswers = isLoadingAnswers,
+        savedPostIds = savedPostIds, userPosts = if (isPublicProfile) publicPosts else userPosts,
+        isLoadingPosts = if (isPublicProfile) loadingPublicContent else isLoadingPosts,
+        userAnswers = if (isPublicProfile) publicAnswers else userAnswers,
+        isLoadingAnswers = if (isPublicProfile) loadingPublicContent else isLoadingAnswers,
+        isPublicProfile = isPublicProfile, onBackClick = onBackClick, onAuthorClick = onAuthorClick,
         onBioClick = { editedBioText = profile?.bio.orEmpty(); showEditBioDialog = true },
         onQuestionClick = onQuestionClick,
         onUpvoteClick = onUpvoteClick, onDownvoteClick = onDownvoteClick,
-        onBookmarkClick = onBookmarkClick, onReportClick = onReportClick,
+        onBookmarkClick = onBookmarkClick, onReportClick = onReportClick, onReportReply = onReportReply,
+        onDeletePost = onDeletePost, onDeleteReply = onDeleteReply,
         onLogOutClick = { scope.launch {
             authRepository.signOut().onSuccess { onLogOutClick() }
                 .onFailure { profileError = "Could not log out. Please try again." }
@@ -260,17 +286,23 @@ internal fun ProfileContent(
     onBookmarkClick: (String) -> Unit, onReportClick: (String, String) -> Unit,
     onLogOutClick: () -> Unit, onNavDestinationSelected: (BottomNavDestination) -> Unit,
     userAnswers: List<ProfileAnswerUiModel> = emptyList(),
-    isLoadingAnswers: Boolean = false
+    isLoadingAnswers: Boolean = false,
+    isPublicProfile: Boolean = false,
+    onBackClick: () -> Unit = {},
+    onAuthorClick: ((String) -> Unit)? = null,
+    onReportReply: (String, String) -> Unit = { _, _ -> },
+    onDeletePost: ((String) -> Unit)? = null,
+    onDeleteReply: ((String, String) -> Unit)? = null
 ) {
     var selectedTab by rememberSaveable { mutableStateOf("My Questions") }
     var topic by rememberSaveable(selectedTab) { mutableStateOf("All") }
-    val posts = userPosts
+    val posts = userPosts.filterNot { it.isAnonymous }
     val activeTopics = if (selectedTab == "Answers") userAnswers.flatMap { it.question.tags } else posts.flatMap { it.tags }
     val categories = activeTopics.distinct()
     val visiblePosts = if (topic == "All") posts else posts.filter { topic in it.tags }
     val visibleAnswers = if (topic == "All") userAnswers else userAnswers.filter { topic in it.question.tags }
     val listState = rememberLazyListState()
-    Scaffold(topBar = { AppHeader() }, bottomBar = { BottomNavBar(BottomNavDestination.PROFILE.route, onNavDestinationSelected) }) { padding ->
+    Scaffold(topBar = { AppHeader(onBackClick = if (isPublicProfile) onBackClick else null) }, bottomBar = { BottomNavBar(if (isPublicProfile) null else BottomNavDestination.PROFILE.route, onNavDestinationSelected) }) { padding ->
         LazyColumn(Modifier.padding(padding).consumeWindowInsets(padding).readingWidth(), state = listState,
             contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
@@ -279,7 +311,7 @@ internal fun ProfileContent(
                     Box(Modifier.size(56.dp)) {
                         Box(Modifier.fillMaxSize().clip(CircleShape)
                             .background(MaterialTheme.colorScheme.primaryContainer), Alignment.Center) {
-                            if (profileBitmap != null) Image(profileBitmap.asImageBitmap(), "Change profile photo",
+                            if (profileBitmap != null) Image(profileBitmap.asImageBitmap(), if (isPublicProfile) "Profile photo" else "Change profile photo",
                                 Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                             else Text(name.firstOrNull()?.uppercase() ?: "S", style = MaterialTheme.typography.headlineSmall,
                                 color = MaterialTheme.colorScheme.primary)
@@ -294,7 +326,7 @@ internal fun ProfileContent(
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            TextButton(onClick = onBioClick, modifier = Modifier.height(32.dp),
+                            if (!isPublicProfile) TextButton(onClick = onBioClick, modifier = Modifier.height(32.dp),
                                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
                                 Icon(Icons.Default.Edit, null, Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
@@ -316,14 +348,14 @@ internal fun ProfileContent(
             item {
                 Column {
                     Row(Modifier.fillMaxWidth()) {
-                        listOf("My Questions" to userPosts.size, "Answers" to userAnswers.size).forEach { (label, count) ->
+                        listOf("My Questions" to posts.size, "Answers" to userAnswers.size).forEach { (label, count) ->
                             val active = selectedTab == label
                             Column(Modifier.weight(1f).semantics { selected = active }.clickable {
                                 selectedTab = label
                             }.padding(horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Row(Modifier.heightIn(min = 42.dp), verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(label, style = MaterialTheme.typography.labelMedium,
+                                    Text(if (isPublicProfile && label == "My Questions") "Questions" else label, style = MaterialTheme.typography.labelMedium,
                                         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
                                         color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1)
@@ -350,7 +382,15 @@ internal fun ProfileContent(
             if (selectedTab == "Answers") {
                 if (!isLoadingAnswers && visibleAnswers.isEmpty()) item { ScreenMessage("No answers yet", "Answers you share will appear here.") }
                 items(visibleAnswers, key = { it.answer.id }) { entry -> SectionCard {
-                    Text(entry.question.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(entry.question.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold)
+                        ReportContentMenu(entry.answer.id, if (entry.answer.parentReplyId == null) "comment" else "reply",
+                            entry.answer.isOwnContent,
+                            onDeleteClick = onDeleteReply?.let { { it(entry.answer.id, entry.question.id) } }) { reason ->
+                            onReportReply(entry.answer.id, reason)
+                        }
+                    }
                     TimestampFormatter.format(entry.answer.createdAt)?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     Text(entry.answer.body, style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = { onQuestionClick(entry.question.id) }) { Text("View conversation →") }
@@ -360,10 +400,11 @@ internal fun ProfileContent(
                     ScreenMessage("No questions yet", "Questions you post will appear here.")
                 }
                 items(visiblePosts, key = { it.id }) { post -> QuestionCard(post, onQuestionClick, onUpvoteClick,
-                    onDownvoteClick = onDownvoteClick, onBookmarkClick = onBookmarkClick, onReportClick = onReportClick,
+                    onDownvoteClick = onDownvoteClick, onBookmarkClick = onBookmarkClick, onReportClick = onReportClick, onAuthorClick = onAuthorClick,
+                    onDeleteClick = onDeletePost,
                     isBookmarked = post.id in savedPostIds) }
             }
-            item { OutlinedButton(onClick = onLogOutClick, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Log out") } }
+            if (!isPublicProfile) item { OutlinedButton(onClick = onLogOutClick, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Log out") } }
         }
     }
 }

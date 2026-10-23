@@ -27,7 +27,9 @@ fun SearchPage(
     savedPostIds: Set<String> = emptySet(), onQuestionClick: (QuestionUiModel) -> Unit = {},
     onUpvoteClick: (String) -> Unit = {}, onDownvoteClick: (String) -> Unit = {},
     onBookmarkClick: ((String) -> Unit)? = null, onReportClick: ((String, String) -> Unit)? = null,
-    onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
+    onAuthorClick: ((String) -> Unit)? = null,
+    onNavDestinationSelected: (BottomNavDestination) -> Unit = {},
+    onDeletePost: ((String) -> Unit)? = null
 ) {
     val categoriesState = rememberLazyListState()
     val resultsState = rememberSaveable(searchQuery, saver = LazyListState.Saver) { LazyListState() }
@@ -75,7 +77,8 @@ fun SearchPage(
                 items(searchResults, key = { it.id }) { question -> QuestionCard(
                     question, { onQuestionClick(question) }, onUpvoteClick,
                     onDownvoteClick = onDownvoteClick, onBookmarkClick = onBookmarkClick,
-                    onReportClick = onReportClick, isBookmarked = question.id in savedPostIds) }
+                    onReportClick = onReportClick, onAuthorClick = onAuthorClick, onDeleteClick = onDeletePost,
+                    isBookmarked = question.id in savedPostIds) }
             }
         }
     }

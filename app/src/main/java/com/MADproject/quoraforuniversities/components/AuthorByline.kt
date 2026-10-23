@@ -1,6 +1,7 @@
 package com.MADproject.quoraforuniversities.components
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -15,7 +16,7 @@ import com.MADproject.quoraforuniversities.utils.TimestampFormatter
 import kotlinx.coroutines.delay
 
 @Composable
-fun AuthorByline(authorName: String, createdAt: String?, modifier: Modifier = Modifier) {
+fun AuthorByline(authorName: String, createdAt: String?, modifier: Modifier = Modifier, onAuthorClick: (() -> Unit)? = null) {
     val timestamp by produceState(TimestampFormatter.format(createdAt), createdAt) {
         do {
             value = TimestampFormatter.format(createdAt)
@@ -26,6 +27,7 @@ fun AuthorByline(authorName: String, createdAt: String?, modifier: Modifier = Mo
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
             text = authorName,
+            modifier = if (onAuthorClick != null) Modifier.clickable(onClick = onAuthorClick) else Modifier,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

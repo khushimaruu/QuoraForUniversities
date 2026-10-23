@@ -14,22 +14,24 @@ class ProfileRepository {
     suspend fun getUserAnswers(targetUserId: String? = null): Result<List<ProfileAnswerUiModel>> = runCatching {
         val uid = targetUserId ?: SupabaseClient.client.auth.currentUserOrNull()?.id
             ?: return@runCatching emptyList()
+        val currentUserId = SupabaseClient.client.auth.currentUserOrNull()?.id
         val answers = SupabaseClient.client.from("replies").select(Columns.raw("*, profiles(*)")) {
             filter { eq("user_id", uid) }
             order("created_at", Order.DESCENDING)
         }.decodeList<ReplyWithProfileDto>()
         if (answers.isEmpty()) return@runCatching emptyList()
-        val posts = PostRepository().getPosts().getOrThrow().associateBy { it.id }
+        // Filter using database ownership before the UI mapping removes anonymous author IDs.
+        val posts = PostRepository().getPosts(excludeAnonymousAuthorId = uid).getOrThrow().associateBy { it.id }
         val votes = SupabaseClient.client.from("votes").select {
             filter { isIn("reply_id", answers.mapNotNull { it.id }) }
         }.decodeList<VoteDto>().groupBy { it.replyId }
-        answers.mapNotNull { answer ->
+        PostRepository().visibleReplies(answers).mapNotNull { answer ->
             val question = posts[answer.postId] ?: return@mapNotNull null
             val answerVotes = votes[answer.id].orEmpty()
             val up = answerVotes.count { it.voteType == 1 }
             val down = answerVotes.count { it.voteType == -1 }
             ProfileAnswerUiModel(question, answer.toUiModel(up - down, up, down,
-                answerVotes.firstOrNull { it.userId == uid }?.voteType ?: 0))
+                answerVotes.firstOrNull { it.userId == currentUserId }?.voteType ?: 0, currentUserId))
         }
     }
 
@@ -62,6 +64,7 @@ class ProfileRepository {
                 .select(Columns.raw("*, profiles(*)")) {
                     filter {
                         eq("user_id", profileOwnerId)
+                        eq("is_anonymous", false)
                     }
                 }
                 .decodeList<PostWithProfileDto>()
@@ -93,7 +96,12 @@ class ProfileRepository {
                     .associate { (it.postId ?: "") to it.voteType }
             } else emptyMap()
 
-            dbPosts.map { dto: PostWithProfileDto ->
+            val reports = SupabaseClient.client.from("reports").select()
+                .decodeList<ReportDto>().filter { it.postId != null && it.status != "dismissed" }
+            val reportCounts = reports.groupingBy { it.postId }.eachCount()
+            val reportedIds = reports.filter { it.reporterId == currentUserId }.mapNotNull { it.postId }.toSet()
+            dbPosts.filter { !it.isAnonymous && (reportCounts[it.id] ?: 0) < PostRepository.REPORT_HIDE_THRESHOLD && it.id !in reportedIds }
+                .map { dto: PostWithProfileDto ->
                 val postId = dto.id ?: ""
                 val upvotes = upvoteCounts[postId] ?: 0
                 val downvotes = downvoteCounts[postId] ?: 0
@@ -102,7 +110,8 @@ class ProfileRepository {
                     answerCount = replyCounts[postId] ?: 0,
                     upvoteCount = upvotes,
                     downvoteCount = downvotes,
-                    currentUserVote = userVotesMap[postId] ?: 0
+                    currentUserVote = userVotesMap[postId] ?: 0,
+                    currentUserId = currentUserId
                 )
             }
         }

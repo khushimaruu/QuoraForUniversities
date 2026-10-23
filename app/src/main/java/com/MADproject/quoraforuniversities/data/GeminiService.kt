@@ -1,7 +1,12 @@
 package com.MADproject.quoraforuniversities.data
 
 import com.MADproject.quoraforuniversities.BuildConfig
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -10,6 +15,7 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.SocketTimeoutException
 
 object GeminiConfig {
     val GEMINI_API_KEY: String get() = BuildConfig.GEMINI_API_KEY
@@ -28,17 +34,31 @@ data class EnhancedPost(
 
 class GeminiService {
 
+    private class ApiFailure(val status: Int) : Exception()
+
+    companion object {
+        fun moderationErrorMessage(error: Throwable?): String = when {
+            error is ApiFailure && error.status in setOf(429, 500, 502, 503, 504) ->
+                "The content check is temporarily busy. Please try again shortly. Your draft has been kept."
+            error is SocketTimeoutException ->
+                "The content check timed out. Please try again. Your draft has been kept."
+            else -> "Couldn't check the content right now. Please try again. Your draft has been kept."
+        }
+    }
+
     private val apiKey = GeminiConfig.GEMINI_API_KEY
 
     private fun localContentCheck(text: String): ModerationResult {
         val lower = text.lowercase()
         val toxicTerms = listOf(
             "idiot", "stupid", "dumb", "fuck", "shit", "bitch", "bastard", "asshole",
-            "mean", "rude", "ugly", "hate", "loser", "jerk", "trash", "shut up",
-            "useless", "nasty", "horrible", "disgusting", "die", "scam", "pathetic",
-            "gross", "creep", "freak", "clown", "scum"
+            "rude", "ugly", "hate", "loser", "shut up",
+            "useless", "nasty", "horrible", "disgusting", "scam", "pathetic",
+            "freak", "clown", "scum"
         )
-        val matched = toxicTerms.firstOrNull { lower.contains(it) }
+        // Match whole words; academic terms such as mean, studies, and material
+        // creep need contextual moderation by Gemini rather than substring rejection.
+        val matched = toxicTerms.firstOrNull { Regex("\\b${Regex.escape(it)}\\b").containsMatchIn(lower) }
         if (matched != null) {
             return ModerationResult(
                 isAllowed = false,
@@ -74,6 +94,7 @@ class GeminiService {
                     2. Zero Tolerance for Hate Speech & Bias: Any attack or hostility based on race, gender, religion, ethnicity, orientation, or background MUST be FLAGGED.
                     3. Zero Tolerance for Profanity & Harassment: Bad language, swearing, vulgarity, harassment, or toxic behavior MUST be FLAGGED.
                     4. Constructive Discussion: Only polite, respectful, safe, and academic content is ALLOWED.
+                    5. Interpret words in context. Academic terms and neutral content labels such as "child reply" are not insults by themselves.
 
                     OUTPUT REQUIREMENT:
                     If the content violates ANY rule above, reply strictly in this format:
@@ -85,12 +106,12 @@ class GeminiService {
 
                 val responseText = callGeminiApi(prompt).trim()
 
-                if (responseText.contains("FLAGGED", ignoreCase = true)) {
-                    val reason = responseText.substringAfter("FLAGGED:")
+                if (responseText.startsWith("FLAGGED:", ignoreCase = true)) {
+                    val reason = responseText.substringAfter(':', missingDelimiterValue = "")
                         .trim()
                         .ifBlank { "Content flagged as rude, toxic, or inappropriate by AI moderation." }
                     ModerationResult(isAllowed = false, reason = reason)
-                } else if (!responseText.startsWith("ALLOWED", ignoreCase = true)) {
+                } else if (!responseText.equals("ALLOWED", ignoreCase = true)) {
                     ModerationResult(isAllowed = false, reason = "Content flagged by community safety guidelines.")
                 } else {
                     ModerationResult(isAllowed = true)
@@ -123,6 +144,7 @@ class GeminiService {
                     2. Zero Tolerance for Hate Speech & Bias: Any attack or hostility based on race, gender, religion, ethnicity, orientation, or background MUST be FLAGGED.
                     3. Zero Tolerance for Profanity & Harassment: Bad language, swearing, vulgarity, harassment, or toxic behavior MUST be FLAGGED.
                     4. Constructive Discussion: Only polite, respectful, safe, and academic content is ALLOWED.
+                    5. Interpret words in context. Academic terms and neutral content labels such as "child reply" are not insults by themselves.
 
                     OUTPUT REQUIREMENT:
                     If the content violates ANY rule above, reply strictly in this format:
@@ -134,12 +156,12 @@ class GeminiService {
 
                 val responseText = callGeminiApi(prompt).trim()
 
-                if (responseText.contains("FLAGGED", ignoreCase = true)) {
-                    val reason = responseText.substringAfter("FLAGGED:")
+                if (responseText.startsWith("FLAGGED:", ignoreCase = true)) {
+                    val reason = responseText.substringAfter(':', missingDelimiterValue = "")
                         .trim()
                         .ifBlank { "Reply flagged as rude, toxic, or inappropriate by AI moderation." }
                     ModerationResult(isAllowed = false, reason = reason)
-                } else if (!responseText.startsWith("ALLOWED", ignoreCase = true)) {
+                } else if (!responseText.equals("ALLOWED", ignoreCase = true)) {
                     ModerationResult(isAllowed = false, reason = "Reply flagged by community safety guidelines.")
                 } else {
                     ModerationResult(isAllowed = true)
@@ -175,14 +197,14 @@ class GeminiService {
                 val enhancedTitle = responseText.lineSequence()
                     .find { it.startsWith("ENHANCED_TITLE:", ignoreCase = true) }
                     .orEmpty()
-                    .substringAfter("ENHANCED_TITLE:")
+                    .substringAfter(':')
                     .trim()
                     .ifBlank { title }
 
                 val enhancedDesc = responseText.lineSequence()
                     .find { it.startsWith("ENHANCED_DESCRIPTION:", ignoreCase = true) }
                     .orEmpty()
-                    .substringAfter("ENHANCED_DESCRIPTION:")
+                    .substringAfter(':')
                     .trim()
                     .ifBlank { description }
 
@@ -190,18 +212,25 @@ class GeminiService {
             }
         }
 
-    private fun callGeminiApi(promptText: String): String {
-        val modelsToTry = listOf("gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-1.5-flash")
+    private suspend fun callGeminiApi(promptText: String): String {
+        val modelsToTry = listOf(GeminiConfig.MODEL_NAME, "gemini-3.5-flash-lite", "gemini-1.5-flash")
         var lastError: Exception? = null
 
         for (modelName in modelsToTry) {
-            val endpointUrl = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
-            try {
-                return executeGeminiRequest(promptText, endpointUrl)
-            } catch (e: Exception) {
-                lastError = e
-                val msg = e.message.orEmpty().lowercase()
-                if (!msg.contains("404") && !msg.contains("not_found") && !msg.contains("not found")) {
+            val endpointUrl = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent"
+            for (attempt in 0..2) {
+                currentCoroutineContext().ensureActive()
+                try {
+                    val response = executeGeminiRequest(promptText, endpointUrl)
+                    currentCoroutineContext().ensureActive()
+                    return response
+                } catch (e: ApiFailure) {
+                    Log.w("GEMINI_API", "Request failed: HTTP ${e.status}, attempt ${attempt + 1}")
+                    lastError = e
+                    if (e.status == 404) break
+                    if (e.status !in setOf(429, 500, 502, 503, 504) || attempt == 2) throw e
+                    delay(1000L shl attempt)
+                } catch (e: CancellationException) {
                     throw e
                 }
             }
@@ -243,19 +272,12 @@ class GeminiService {
             }
 
             val statusCode = connection.responseCode
-            val inputStream = if (statusCode == 200) connection.inputStream else connection.errorStream
-            val reader = BufferedReader(InputStreamReader(inputStream, "UTF-8"))
-            val responseString = reader.readText()
-            reader.close()
-
             if (statusCode != 200) {
-                val apiErrorMessage = runCatching {
-                    JSONObject(responseString).optJSONObject("error")?.optString("message")
-                }.getOrNull()?.ifBlank { null }
-
-                val cleanMessage = apiErrorMessage ?: "HTTP $statusCode error"
-                error("Gemini API Error ($statusCode): $cleanMessage")
+                connection.errorStream?.close()
+                throw ApiFailure(statusCode)
             }
+
+            val responseString = BufferedReader(InputStreamReader(connection.inputStream, "UTF-8")).use { it.readText() }
 
             val responseJson = JSONObject(responseString)
             val candidates = responseJson.optJSONArray("candidates")

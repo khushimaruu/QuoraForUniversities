@@ -32,7 +32,9 @@ fun SavedPostsPage(
     onBookmarkClick: (String) -> Unit = {},
     onReportClick: ((postId: String, reason: String) -> Unit)? = null,
     onBackClick: () -> Unit = {},
-    onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
+    onAuthorClick: ((String) -> Unit)? = null,
+    onNavDestinationSelected: (BottomNavDestination) -> Unit = {},
+    onDeletePost: ((String) -> Unit)? = null
 ) {
     BackHandler(onBack = onBackClick)
 
@@ -111,7 +113,8 @@ fun SavedPostsPage(
                                 onUpvoteClick = onUpvoteClick,
                                 onDownvoteClick = onDownvoteClick,
                                 onBookmarkClick = onBookmarkClick,
-                                onReportClick = onReportClick,
+                                onReportClick = onReportClick, onAuthorClick = onAuthorClick,
+                                onDeleteClick = onDeletePost,
                                 isBookmarked = savedPostIds.contains(question.id)
                             )
                         }

@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import com.MADproject.quoraforuniversities.utils.ReplyOrder
-import com.MADproject.quoraforuniversities.utils.orderReplyThreads
+import com.MADproject.quoraforuniversities.utils.replyThreadRows
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,8 +13,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.OutlinedFlag
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
@@ -45,7 +45,7 @@ import com.MADproject.quoraforuniversities.components.AuthorAvatar
 import com.MADproject.quoraforuniversities.components.BottomNavBar
 import com.MADproject.quoraforuniversities.components.BottomNavDestination
 import com.MADproject.quoraforuniversities.components.QuestionUiModel
-import com.MADproject.quoraforuniversities.components.ReportPostDialog
+import com.MADproject.quoraforuniversities.components.ReportContentMenu
 import com.MADproject.quoraforuniversities.data.GeminiService
 import com.MADproject.quoraforuniversities.ui.theme.CampusQnATheme
 import com.MADproject.quoraforuniversities.utils.ReplyMentions
@@ -62,7 +62,9 @@ data class ReplyUiModel(
     val upvoteCount: Int = voteCount.coerceAtLeast(0),
     val downvoteCount: Int = 0,
     val currentUserVote: Int = 0,
-    val authorAvatar: String? = null
+    val authorAvatar: String? = null,
+    val authorId: String = "",
+    val isOwnContent: Boolean = false
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -80,7 +82,11 @@ fun PostDetailPage(
     onReportClick: ((postId: String, reason: String) -> Unit)? = null,
     onSubmitReply: (text: String, parentReplyId: String?, onResult: (String?) -> Unit) -> Unit = { _, _, _ -> },
     onReplyVote: (replyId: String, voteType: Int, onResult: (String?) -> Unit) -> Unit = { _, _, onResult -> onResult(null) },
-    onNavDestinationSelected: (BottomNavDestination) -> Unit = {}
+    onNavDestinationSelected: (BottomNavDestination) -> Unit = {},
+    onAuthorClick: ((String) -> Unit)? = null,
+    onReportReply: ((String, String) -> Unit)? = null,
+    onDeletePost: ((String) -> Unit)? = null,
+    onDeleteReply: ((String, String) -> Unit)? = null
 ) {
     var replyText by rememberSaveable(question.id, stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue())
@@ -88,15 +94,32 @@ fun PostDetailPage(
     val replyFocusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     var replyOrder by rememberSaveable(question.id) { mutableStateOf(ReplyOrder.TOP) }
-    val replyRows = remember(replies, replyOrder) { orderReplyThreads(replies, replyOrder) }
+    var collapsedReplyIds by rememberSaveable(question.id) { mutableStateOf(emptyList<String>()) }
+    val allReplyRows = remember(replies, replyOrder) { replyThreadRows(replies, replyOrder) }
+    val replyRows = remember(allReplyRows, collapsedReplyIds) {
+        var hiddenBelowDepth: Int? = null
+        allReplyRows.filter { row ->
+            if (hiddenBelowDepth?.let { row.depth > it } == true) false
+            else {
+                hiddenBelowDepth = if (row.reply.id in collapsedReplyIds) row.depth else null
+                true
+            }
+        }
+    }
     var selectedParentId by rememberSaveable(question.id) { mutableStateOf<String?>(null) }
     var selectedParentUsername by rememberSaveable(question.id) { mutableStateOf<String?>(null) }
     var pendingVotes by remember(question.id) { mutableStateOf(emptySet<String>()) }
     var isSubmitting by remember { mutableStateOf(false) }
     var replyError by remember { mutableStateOf<String?>(null) }
-    var showMenu by remember { mutableStateOf(false) }
-    var showReportDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(replies, selectedParentId) {
+        if (selectedParentId != null && replies.none { it.id == selectedParentId }) {
+            selectedParentId = null
+            selectedParentUsername = null
+            replyError = "That reply is no longer available. Your draft has been kept."
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -147,40 +170,15 @@ fun PostDetailPage(
                                 AuthorByline(
                                     authorName = if (question.isAnonymous) "Anonymous" else question.authorName,
                                     createdAt = question.createdAt,
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f),
+                                    onAuthorClick = if (!question.isAnonymous && question.authorId.isNotBlank() && onAuthorClick != null)
+                                        ({ onAuthorClick(question.authorId) }) else null
                                 )
 
-                                Box {
-                                    IconButton(
-                                        onClick = { showMenu = true },
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.MoreVert,
-                                            contentDescription = "More Options",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-
-                                    DropdownMenu(
-                                        expanded = showMenu,
-                                        onDismissRequest = { showMenu = false }
-                                    ) {
-                                        DropdownMenuItem(
-                                            text = { Text("Report Post", color = MaterialTheme.colorScheme.error) },
-                                            leadingIcon = {
-                                                Icon(
-                                                    imageVector = Icons.Default.OutlinedFlag,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.error
-                                                )
-                                            },
-                                            onClick = {
-                                                showMenu = false
-                                                showReportDialog = true
-                                            }
-                                        )
+                                if (onReportClick != null || onDeletePost != null) {
+                                    ReportContentMenu(question.id, "post", question.isOwnContent,
+                                        onDeleteClick = onDeletePost?.let { { it(question.id) } }) { reason ->
+                                        onReportClick?.invoke(question.id, reason)
                                     }
                                 }
                             }
@@ -320,10 +318,20 @@ fun PostDetailPage(
                 }
 
                 // REPLIES LIST
-                items(replyRows, key = { it.first.id }) { (reply, isChild) ->
+                items(replyRows, key = { it.reply.id }) { row ->
+                    val reply = row.reply
                     ReplyCard(
                         reply = reply,
-                        modifier = Modifier.padding(start = if (isChild) 24.dp else 0.dp),
+                        onAuthorClick = onAuthorClick,
+                        onReportClick = onReportReply,
+                        onDeleteClick = onDeleteReply?.let { delete -> { id -> delete(id, question.id) } },
+                        modifier = Modifier.padding(start = (row.depth.coerceAtMost(3) * 24).dp),
+                        descendantCount = row.descendantCount,
+                        repliesCollapsed = reply.id in collapsedReplyIds,
+                        onToggleReplies = {
+                            collapsedReplyIds = if (reply.id in collapsedReplyIds) collapsedReplyIds - reply.id
+                                else collapsedReplyIds + reply.id
+                        },
                         replyEnabled = !isSubmitting,
                         voteEnabled = reply.id !in pendingVotes,
                         onVoteClick = { voteType ->
@@ -440,8 +448,7 @@ fun PostDetailPage(
                                             }
                                         } else {
                                             isSubmitting = false
-                                            replyError = moderationResult.exceptionOrNull()?.localizedMessage
-                                                ?: "AI content moderation check failed."
+                                            replyError = GeminiService.moderationErrorMessage(moderationResult.exceptionOrNull())
                                             return@launch
                                         }
 
@@ -450,6 +457,12 @@ fun PostDetailPage(
                                             if (error != null) {
                                                 replyError = error
                                             } else {
+                                                // Reveal the submitted reply even if its parent was collapsed while sending.
+                                                val parents = replies.associate { it.id to it.parentReplyId }
+                                                val expandIds = mutableSetOf<String>()
+                                                var parentId = submittedParentId
+                                                while (parentId != null && expandIds.add(parentId)) parentId = parents[parentId]
+                                                collapsedReplyIds = collapsedReplyIds.filterNot { it in expandIds }
                                                 replyText = TextFieldValue()
                                                 selectedParentId = null
                                                 selectedParentUsername = null
@@ -473,15 +486,6 @@ fun PostDetailPage(
         }
     }
 
-    if (showReportDialog) {
-        ReportPostDialog(
-            onDismiss = { showReportDialog = false },
-            onConfirmReport = { reason ->
-                showReportDialog = false
-                onReportClick?.invoke(question.id, reason)
-            }
-        )
-    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -492,6 +496,12 @@ fun ReplyCard(
     modifier: Modifier = Modifier,
     voteEnabled: Boolean = true,
     onVoteClick: (Int) -> Unit = {},
+    onAuthorClick: ((String) -> Unit)? = null,
+    onReportClick: ((String, String) -> Unit)? = null,
+    onDeleteClick: ((String) -> Unit)? = null,
+    descendantCount: Int = 0,
+    repliesCollapsed: Boolean = false,
+    onToggleReplies: (() -> Unit)? = null,
     onReplyClick: () -> Unit = {}
 ) {
     OutlinedCard(
@@ -507,7 +517,15 @@ fun ReplyCard(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AuthorAvatar(reply.authorAvatar, reply.authorName, 30.dp)
-                AuthorByline(authorName = reply.authorName, createdAt = reply.createdAt)
+                AuthorByline(authorName = reply.authorName, createdAt = reply.createdAt, modifier = Modifier.weight(1f),
+                    onAuthorClick = if (reply.authorId.isNotBlank() && onAuthorClick != null)
+                        ({ onAuthorClick(reply.authorId) }) else null)
+                if (onReportClick != null || onDeleteClick != null) {
+                    ReportContentMenu(reply.id, if (reply.parentReplyId == null) "comment" else "reply", reply.isOwnContent,
+                        onDeleteClick = onDeleteClick?.let { { it(reply.id) } }) { reason ->
+                        onReportClick?.invoke(reply.id, reason)
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -560,6 +578,16 @@ fun ReplyCard(
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                 ) {
                     Text("Reply", style = MaterialTheme.typography.labelSmall)
+                }
+                if (descendantCount > 0 && onToggleReplies != null) TextButton(
+                    onClick = onToggleReplies,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                ) {
+                    Icon(if (repliesCollapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                        null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("${if (repliesCollapsed) "Show" else "Hide"} $descendantCount ${if (descendantCount == 1) "reply" else "replies"}",
+                        style = MaterialTheme.typography.labelSmall)
                 }
             }
         }

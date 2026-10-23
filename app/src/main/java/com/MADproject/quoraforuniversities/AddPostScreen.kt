@@ -65,7 +65,7 @@ fun AddPostScreen(
                     try {
                         val moderation = geminiService.checkContentModeration(title.trim(), description.trim())
                         if (moderation.isFailure) {
-                            error = "Couldn't check the content right now. Please try again."
+                            error = GeminiService.moderationErrorMessage(moderation.exceptionOrNull())
                         } else if (moderation.getOrThrow().isAllowed) {
                             postRepository.createPost(title.trim(), description.trim(), themes.joinToString(","), anonymous)
                                 .onSuccess { success = true }

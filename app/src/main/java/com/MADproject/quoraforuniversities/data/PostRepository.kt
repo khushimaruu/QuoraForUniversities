@@ -15,13 +15,14 @@ import java.time.OffsetDateTime
 
 class PostRepository {
     private val replyVoteMutex = Mutex()
+    private val reportMutex = Mutex()
 
     companion object {
         const val REPORT_HIDE_THRESHOLD = 3
         private const val TAG = "VOTE_SYSTEM"
     }
 
-    suspend fun getPosts(): Result<List<QuestionUiModel>> {
+    suspend fun getPosts(excludeAnonymousAuthorId: String? = null): Result<List<QuestionUiModel>> {
         return runCatching<List<QuestionUiModel>> {
             val dbPosts = SupabaseClient.client.from("posts")
                 .select(Columns.raw("*, profiles(*)")) {
@@ -80,7 +81,8 @@ class PostRepository {
 
             dbPosts.filter { dto ->
                 val postId = dto.id ?: ""
-                (postReportCounts[postId] ?: 0) < REPORT_HIDE_THRESHOLD && !userReportedPostIds.contains(postId)
+                (postReportCounts[postId] ?: 0) < REPORT_HIDE_THRESHOLD && !userReportedPostIds.contains(postId) &&
+                    !(excludeAnonymousAuthorId != null && dto.isAnonymous && dto.userId == excludeAnonymousAuthorId)
             }.map { dto: PostWithProfileDto ->
                 val id = dto.id ?: ""
                 val up = upvoteCounts[id] ?: 0
@@ -90,7 +92,8 @@ class PostRepository {
                     answerCount = replyCounts[id] ?: 0,
                     upvoteCount = up,
                     downvoteCount = down,
-                    currentUserVote = userVotesMap[id] ?: 0
+                    currentUserVote = userVotesMap[id] ?: 0,
+                    currentUserId = currentUserId
                 )
             }
         }.onFailure { e ->
@@ -164,17 +167,65 @@ class PostRepository {
         }
     }
 
-    suspend fun reportPost(postId: String, reason: String): Result<Unit> {
-        return runCatching<Unit> {
+    suspend fun reportPost(postId: String, reason: String): Result<Unit> =
+        reportContent(postId = postId, reason = reason)
+
+    // Request the deleted row: RLS may otherwise return success with zero rows deleted.
+    suspend fun deletePost(postId: String): Result<Unit> = runCatching {
+        val user = SupabaseClient.client.auth.currentUserOrNull() ?: error("Sign in to delete content.")
+        require(postId.isNotBlank())
+        val deleted = SupabaseClient.client.from("posts").delete {
+            select(Columns.raw("id"))
+            filter { eq("id", postId); eq("user_id", user.id) }
+        }.decodeList<PostDto>()
+        check(deleted.any { it.id == postId }) { "Content is unavailable or cannot be deleted by this account." }
+    }
+
+    suspend fun deleteReply(replyId: String): Result<Unit> = runCatching {
+        val user = SupabaseClient.client.auth.currentUserOrNull() ?: error("Sign in to delete content.")
+        require(replyId.isNotBlank())
+        val deleted = SupabaseClient.client.from("replies").delete {
+            select(Columns.raw("id"))
+            filter { eq("id", replyId); eq("user_id", user.id) }
+        }.decodeList<ReplyDto>()
+        check(deleted.any { it.id == replyId }) { "Content is unavailable or cannot be deleted by this account." }
+    }
+
+    suspend fun reportReply(replyId: String, reason: String): Result<Unit> =
+        reportContent(replyId = replyId, reason = reason)
+
+    private suspend fun reportContent(postId: String? = null, replyId: String? = null, reason: String): Result<Unit> = reportMutex.withLock {
+        runCatching {
             val user = SupabaseClient.client.auth.currentUserOrNull() ?: error("User must be logged in to report")
+            require(reason.isNotBlank()) { "Please select a report reason." }
+            val targetId = postId ?: replyId ?: error("Content is missing.")
+            require(targetId.isNotBlank()) { "Content is missing." }
+            val contentType = if (postId != null) "post" else "reply"
+            val ownerId = if (postId != null) {
+                SupabaseClient.client.from("posts").select { filter { eq("id", targetId) } }
+                    .decodeList<PostDto>().firstOrNull()?.userId
+            } else {
+                SupabaseClient.client.from("replies").select { filter { eq("id", targetId) } }
+                    .decodeList<ReplyDto>().firstOrNull()?.userId
+            } ?: error("Content is no longer available.")
+            check(ownerId != user.id) { "You cannot report your own $contentType." }
+            val existing = SupabaseClient.client.from("reports").select {
+                filter {
+                    eq("reporter_id", user.id)
+                    eq(if (postId != null) "post_id" else "reply_id", targetId)
+                }
+            }.decodeList<ReportDto>()
+            check(existing.isEmpty()) { "You have already reported this $contentType." }
             SupabaseClient.client.from("reports").insert(
                 CreateReportDto(
                     reporterId = user.id,
                     postId = postId,
+                    replyId = replyId,
                     reason = reason,
                     status = "pending"
                 )
             )
+            Unit
         }
     }
 
@@ -240,7 +291,8 @@ class PostRepository {
                     answerCount = replyCounts[id] ?: 0,
                     upvoteCount = up,
                     downvoteCount = down,
-                    currentUserVote = userVotesMap[id] ?: 0
+                    currentUserVote = userVotesMap[id] ?: 0,
+                    currentUserId = currentUserId
                 )
             }.sortedWith(
                 compareByDescending<QuestionUiModel> { it.upvoteCount }
@@ -266,13 +318,14 @@ class PostRepository {
                 filter { isIn("reply_id", dbReplies.mapNotNull { it.id }) }
             }.decodeList<VoteDto>().groupBy { it.replyId }
             val userId = SupabaseClient.client.auth.currentUserOrNull()?.id
-            dbReplies.map { reply ->
+            visibleReplies(dbReplies).map { reply ->
                 val replyVotes = votes[reply.id].orEmpty()
                 val up = replyVotes.count { it.voteType == 1 }
                 val down = replyVotes.count { it.voteType == -1 }
                 reply.toUiModel(
                     voteCount = up - down, upvoteCount = up, downvoteCount = down,
-                    currentUserVote = replyVotes.firstOrNull { it.userId == userId }?.voteType ?: 0
+                    currentUserVote = replyVotes.firstOrNull { it.userId == userId }?.voteType ?: 0,
+                    currentUserId = userId
                 )
             }
         }
@@ -305,6 +358,17 @@ class PostRepository {
         }
     }
 
+    internal suspend fun visibleReplies(replies: List<ReplyWithProfileDto>): List<ReplyWithProfileDto> {
+        if (replies.isEmpty()) return replies
+        val reports = SupabaseClient.client.from("reports").select {
+            filter { isIn("reply_id", replies.mapNotNull { it.id }) }
+        }.decodeList<ReportDto>().filter { it.status != "dismissed" }
+        val counts = reports.groupingBy { it.replyId }.eachCount()
+        val userId = SupabaseClient.client.auth.currentUserOrNull()?.id
+        val reportedIds = reports.filter { it.reporterId == userId }.mapNotNull { it.replyId }.toSet()
+        return replies.filter { (counts[it.id] ?: 0) < REPORT_HIDE_THRESHOLD && it.id !in reportedIds }
+    }
+
     suspend fun bookmarkPost(postId: String): Result<Unit> {
         return runCatching<Unit> {
             val user = SupabaseClient.client.auth.currentUserOrNull() ?: error("Not logged in")
@@ -324,7 +388,7 @@ class PostRepository {
         }
     }
 
-    suspend fun getSavedPostIds(): Set<String> {
+    suspend fun getSavedPostIds(): Result<Set<String>> {
         return runCatching<Set<String>> {
             val user = SupabaseClient.client.auth.currentUserOrNull() ?: return@runCatching emptySet()
             SupabaseClient.client.from("bookmarks").select {
@@ -332,12 +396,12 @@ class PostRepository {
                     eq("user_id", user.id)
                 }
             }.decodeList<BookmarkDto>().mapNotNull { it.postId }.toSet()
-        }.getOrDefault(emptySet())
+        }
     }
 
     suspend fun getSavedPosts(): Result<List<QuestionUiModel>> {
         return runCatching<List<QuestionUiModel>> {
-            val ids = getSavedPostIds()
+            val ids = getSavedPostIds().getOrThrow()
             if (ids.isEmpty()) return@runCatching emptyList()
             getPosts().getOrThrow().filter { it.id in ids }
         }
